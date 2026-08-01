@@ -28,8 +28,23 @@ public partial class SettingsWindow : Window
 
     private static AppSettings CloneSettings(AppSettings s)
     {
-        var json = System.Text.Json.JsonSerializer.Serialize(s);
-        return System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json)!;
+        // 手动字段拷贝,避免 JsonSerializer 默认配置无法处理 Rect.Empty 的无穷大值
+        return new AppSettings
+        {
+            AiProvider = s.AiProvider,
+            GlmApiKey = s.GlmApiKey,
+            GlmModel = s.GlmModel,
+            QwenApiKey = s.QwenApiKey,
+            QwenModel = s.QwenModel,
+            ShipDataPath = s.ShipDataPath,
+            MinimapRegion = s.MinimapRegion,
+            WindowLeft = s.WindowLeft,
+            WindowTop = s.WindowTop,
+            WindowWidth = s.WindowWidth,
+            WindowHeight = s.WindowHeight,
+            AttachKnowledgeBase = s.AttachKnowledgeBase,
+            SystemPrompt = s.SystemPrompt,
+        };
     }
 
     private void LoadUi()

@@ -154,6 +154,19 @@ public partial class MainWindow : Window
         catch { }
     }
 
+    // ===== 折叠/展开详情 =====
+    private bool _collapsed;
+    private void BtnCollapse_Click(object sender, RoutedEventArgs e)
+    {
+        _collapsed = !_collapsed;
+        var vis = _collapsed ? Visibility.Collapsed : Visibility.Visible;
+        StatusBar.Visibility = vis;
+        Step1Details.Visibility = vis;
+        Step2Details.Visibility = vis;
+        BtnCollapse.Content = _collapsed ? "▼" : "▲";
+        TxtFooter.Visibility = vis; // 折叠时也隐藏底部用时信息
+    }
+
     // ===== 步骤①：截阵容 → AI 识别 =====
     private async void BtnCaptureLineup_Click(object sender, RoutedEventArgs e)
     {

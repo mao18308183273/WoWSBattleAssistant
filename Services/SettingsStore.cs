@@ -64,9 +64,14 @@ public sealed class RectJsonConverter : System.Text.Json.Serialization.JsonConve
 {
     public override Rect Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
+        if (reader.TokenType == JsonTokenType.Null) return Rect.Empty;
+
         if (reader.TokenType == JsonTokenType.String)
         {
-            var parts = reader.GetString()?.Split(',');
+            var s = reader.GetString();
+            if (string.Equals(s, "Empty", StringComparison.OrdinalIgnoreCase)) return Rect.Empty;
+
+            var parts = s?.Split(',');
             if (parts != null && parts.Length == 4 &&
                 double.TryParse(parts[0], out var x) &&
                 double.TryParse(parts[1], out var y) &&
@@ -79,10 +84,16 @@ public sealed class RectJsonConverter : System.Text.Json.Serialization.JsonConve
         else if (reader.TokenType == JsonTokenType.StartObject)
         {
             double x = 0, y = 0, w = 0, h = 0;
+            bool isEmpty = false;
             while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
             {
                 var prop = reader.GetString();
                 reader.Read();
+                if (string.Equals(prop, "IsEmpty", StringComparison.OrdinalIgnoreCase))
+                {
+                    isEmpty = reader.GetBoolean();
+                    continue;
+                }
                 var val = reader.GetDouble();
                 switch (prop)
                 {
@@ -92,13 +103,21 @@ public sealed class RectJsonConverter : System.Text.Json.Serialization.JsonConve
                     case "Height": case "height": h = val; break;
                 }
             }
-            return new Rect(x, y, w, h);
+            return isEmpty ? Rect.Empty : new Rect(x, y, w, h);
         }
         return Rect.Empty;
     }
 
     public override void Write(Utf8JsonWriter writer, Rect value, JsonSerializerOptions options)
     {
+        // Rect.Empty 的 X/Y=+∞, Width/Height=-∞, 无法直接写成 JSON 数字,单独标记
+        if (value.IsEmpty)
+        {
+            writer.WriteStartObject();
+            writer.WriteBoolean("IsEmpty", true);
+            writer.WriteEndObject();
+            return;
+        }
         writer.WriteStartObject();
         writer.WriteNumber("X", value.X);
         writer.WriteNumber("Y", value.Y);
