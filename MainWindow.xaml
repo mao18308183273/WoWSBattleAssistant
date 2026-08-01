@@ -26,6 +26,33 @@
         <Style TargetType="ComboBox">
             <Setter Property="IsTabStop" Value="False"/>
         </Style>
+        <!-- 覆盖系统窗口色：让下拉面板(Popup)容器为深色，而非默认白色 -->
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FF13141F"/>
+        <!-- 下拉项样式：深色背景 + 白字，悬停/选中加深，彻底解决"白字浅底看不清" -->
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="#FF1A1B2E"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="#FF3A3B55" BorderThickness="0,0,0,1"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#FF2D2E44"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#FF3A3B55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Border x:Name="RootBorder" Background="#EE1A1B2E" CornerRadius="10" BorderBrush="#FF4FC3F7" BorderThickness="1">
