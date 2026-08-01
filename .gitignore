@@ -1,0 +1,45 @@
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+bin/
+obj/
+[Bb]uild/
+artifacts/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+*.vshost.*
+*.vspscc
+*.pfx
+*.pdb
+*.cache
+
+# NuGet
+*.nupkg
+*.snupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+# .NET
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Rider / VSCode
+.idea/
+*.sln.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

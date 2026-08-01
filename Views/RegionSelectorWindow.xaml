@@ -1,0 +1,30 @@
+<Window x:Class="WoWSBattleAssistant.Views.RegionSelectorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="框选小地图区域"
+        WindowStyle="None"
+        WindowState="Normal"
+        ResizeMode="NoResize"
+        Topmost="True"
+        AllowsTransparency="True"
+        Background="#88000000"
+        ShowInTaskbar="False"
+        Cursor="Cross"
+        WindowStartupLocation="Manual">
+    <Canvas x:Name="DrawCanvas" ClipToBounds="False">
+        <Border Canvas.Left="0" Canvas.Top="0" Background="#AA000000" CornerRadius="6" Padding="20,12" Margin="20">
+            <StackPanel>
+                <TextBlock Text="框选小地图区域" FontSize="22" FontWeight="Bold" Foreground="White"/>
+                <TextBlock Text="按住鼠标左键拖动框选游戏小地图所在区域，松开即完成设置；按 Esc 取消。"
+                           FontSize="13" Foreground="#FFBDBDBD" Margin="0,6,0,0" TextWrapping="Wrap" MaxWidth="500"/>
+                <TextBlock x:Name="SizeTip" Text="" FontSize="12" Foreground="#FF4FC3F7" Margin="0,4,0,0"/>
+            </StackPanel>
+        </Border>
+        <Rectangle x:Name="SelectionRect"
+                   Stroke="#FF4FC3F7" StrokeThickness="2"
+                   Fill="#33FFFFFF" Visibility="Collapsed"/>
+        <Border x:Name="SizeBadge" Background="#FF4FC3F7" CornerRadius="3" Padding="6,2" Visibility="Collapsed">
+            <TextBlock x:Name="SizeBadgeText" FontSize="11" Foreground="Black"/>
+        </Border>
+    </Canvas>
+</Window>
