@@ -37,19 +37,34 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
 
     protected virtual string DefaultSystemPrompt =>
         """
-        你是《战舰世界》(World of Warships) 的资深战术分析助手。用户会提供：
-        1. 一张小地图截图（显示双方舰船当前位置）
-        2. 用户自己的战舰名称
-        3. 我方其他战舰名称
-        4. 敌方战舰名称
-        5. 这些战舰的官方参数数据（作为知识库）
+        你是《战舰世界》(World of Warships) 资深战术助手，擅长结合阵容面板、小地图、战舰参数和玩家信息做局势判断与威胁评估。
 
-        请基于小地图位置关系和各舰船参数特性，输出三部分：
-        【敌方威胁分析】指出敌方最危险的舰船（基于主炮口径/射程/隐蔽/鱼雷等），说明需重点防范的目标。
-        【走位建议】结合小地图当前位置和我方战舰参数，给出具体走位方向、交战距离、推进/撤退/转场建议。
-        【本局玩法提示】利用岛屿、控制视野、鱼雷预射、开局/中盘/残局的注意事项。
+        【输入】
+        - 阵容面板截图：含双方"玩家名+舰船名"。请你自行看图判断敌我——用户战舰所在一方为我方，不要假设左右分布（随机/排位/行动等模式阵容面板左右不同）。
+        - 小地图截图：图例 绿色=我方舰船，红色=敌方舰船，白色箭头=用户自己的舰船。
+        - 用户战舰名 + 本局所有舰船名（扁平列表，可能含重复：双方同型舰会出现两次）。
+        - 战舰参数知识库：仅供你内部参考，输出中不要复述、罗列参数。
 
-        要求：中文输出，分点说明，简洁有重点，结合具体数值（如"XX隐蔽好需警惕"、"XX主炮射程18km可远距离消耗"），避免空话。
+        【关键判断规则】
+        1. 人机 vs 真人：看阵容图中玩家名——名字里带冒号":"的是人机(AI)，没有冒号的是真人玩家。
+        2. 威胁评估：真人玩家通常比人机更危险、更可能带节奏；结合玩家名风格与所驾舰船性能综合判断哪几个真人最凶。
+        3. 优先目标：综合"舰船威胁度"与"是否真人"确定本局应优先处理的目标。
+
+        【容错】
+        - 小地图上可能没有敌方舰船（开局对面未点亮）：此时威胁与策略基于阵容和参数推断，不要编造敌方位置。
+        - 双方可能出现同型舰：靠阵容图中的阵营归属区分，不要混淆敌我同型舰。
+        - 若阵容图里某些信息看不清，按能看清的部分判断，不要瞎编。
+
+        【输出】直接给以下四部分，中文，分点，简洁。可引用具体数值（如"隐蔽5.8km""主炮射程18km"）但不要整段抄参数，不要废话套话：
+        1.【怎么玩这艘船】针对用户战舰，结合其参数特性给出本局打法要点：接敌距离、走位思路、消耗品时机、应避免的对抗。
+        2.【敌方威胁评估】
+           - 先点明敌方有几艘是人机、几艘是真人（依据玩家名冒号）。
+           - 对真人玩家，结合其玩家名与舰船判断谁最凶、最可能带节奏，说明理由。
+           - 结合舰船性能（主炮口径/射程/隐蔽/鱼雷/机动/防空）说明每个重点目标的威胁点。
+        3.【优先攻击目标】明确给出本局建议优先处理的目标（具体舰船+是否真人），一句话理由+克制手段。
+        4.【整局局势与策略】结合小地图双方位置分布（若有红色敌舰）给出整体走向与关键决策（推进/转场/控点/视野/集火）。若敌方未点亮，给出开局预案。
+
+        所有建议必须落到本局具体舰船和位置上，禁止与局势无关的通用套话。
         """;
 
     private static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromMinutes(3) };
@@ -62,8 +77,13 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         {
             if (string.IsNullOrWhiteSpace(ApiKey))
                 throw new InvalidOperationException($"未配置 {ProviderName} 的 API Key，请在设置中填写。");
+
+            // 编码两张图
             if (string.IsNullOrWhiteSpace(request.ImageBase64) && request.MinimapImage != null)
                 request.ImageBase64 = ScreenCaptureService.EncodeToBase64(request.MinimapImage);
+            if (request.LineupImage != null && string.IsNullOrWhiteSpace(request.LineupImageBase64))
+                request.LineupImageBase64 = ScreenCaptureService.EncodeToBase64(request.LineupImage);
+
             if (string.IsNullOrWhiteSpace(request.ImageBase64))
                 throw new InvalidOperationException("缺少小地图截图。");
 
@@ -72,7 +92,13 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
 
             var userText = BuildUserPrompt(request);
 
-            var payload = BuildPayload(systemPrompt, userText, request.ImageBase64);
+            // 收集所有要发送的图片（阵容图在前，小地图在后）
+            var images = new List<string>();
+            if (!string.IsNullOrWhiteSpace(request.LineupImageBase64))
+                images.Add(request.LineupImageBase64);
+            images.Add(request.ImageBase64);
+
+            var payload = BuildPayload(systemPrompt, userText, images.ToArray());
             var httpReq = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions");
             httpReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
             httpReq.Content = new StringContent(payload, Encoding.UTF8, "application/json");
@@ -107,43 +133,42 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         }
     }
 
-    /// <summary>构造用户提示词（含知识库与阵容）</summary>
+    /// <summary>构造用户提示词（含知识库与扁平舰船列表，不分敌我）</summary>
     protected virtual string BuildUserPrompt(BattleAnalysisRequest req)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("请分析这局《战舰世界》战局（小地图截图见图片）：");
+        sb.AppendLine("分析本局。图片顺序：");
+        if (!string.IsNullOrWhiteSpace(req.LineupImageBase64))
+            sb.AppendLine("1) 阵容面板截图（自己判断敌我，用户战舰所在一方为我方）");
+        sb.AppendLine("2) 小地图截图（绿=我方，红=敌方，白箭头=用户自己）");
         sb.AppendLine();
         sb.AppendLine($"【我的战舰】{req.MyShip}");
-        sb.AppendLine($"【我方其他战舰】{req.AlliedShips}");
-        sb.AppendLine($"【敌方战舰】{req.EnemyShips}");
+        sb.AppendLine($"【本局所有舰船】{req.AllShips}（含重复=双方同型舰）");
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(req.KnowledgeBaseText))
-        {
             sb.AppendLine(req.KnowledgeBaseText);
-        }
         sb.AppendLine();
-        sb.AppendLine("请根据小地图上各舰船的位置（颜色/图标分布）以及上述参数，给出战术分析。");
+        sb.AppendLine("按系统提示的三部分输出，不要复述参数。");
         return sb.ToString();
     }
 
-    /// <summary>构造 OpenAI 兼容的请求体</summary>
-    protected virtual string BuildPayload(string systemPrompt, string userText, string imageBase64)
+    /// <summary>构造 OpenAI 兼容的请求体（支持多张图片）</summary>
+    protected virtual string BuildPayload(string systemPrompt, string userText, params string[] imageBase64List)
     {
+        var contentList = new List<object>();
+        foreach (var img in imageBase64List)
+        {
+            contentList.Add(new { type = "image_url", image_url = new { url = $"data:image/png;base64,{img}" } });
+        }
+        contentList.Add(new { type = "text", text = userText });
+
         var payload = new
         {
             model = Model,
             messages = new object[]
             {
                 new { role = "system", content = systemPrompt },
-                new
-                {
-                    role = "user",
-                    content = new object[]
-                    {
-                        new { type = "image_url", image_url = new { url = $"data:image/png;base64,{imageBase64}" } },
-                        new { type = "text", text = userText }
-                    }
-                }
+                new { role = "user", content = contentList }
             },
             temperature = 0.6,
             max_tokens = 2048
@@ -178,16 +203,16 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
     protected virtual string RecognitionSystemPrompt =>
         """
         你是《战舰世界》(World of Warships) 的图像识别助手。用户会提供一张游戏开局读秒阶段的双方阵容面板截图。
-        阵容面板通常一边是我方（盟友）舰船列表，另一边是敌方舰船列表，请根据图中的布局/颜色/分组识别。
+        阵容面板包含两方所有舰船的名称。
 
         识别要求：
-        1. 提取每一艘战舰的名称（游戏内显示的舰船名，如"大和""蒙大拿""Z-52"等）。
-        2. 分为"allies"（我方）和"enemies"（敌方）两组。
-        3. 阵容图无法直接区分玩家自己的船，请把所有我方舰船都放进 allies 数组，不要猜测哪艘是玩家本人。
+        1. 提取图中出现的每一艘战舰的名称（游戏内显示的舰船名，如"大和""蒙大拿""Z-52"等）。
+        2. 不要区分敌我/左右阵营，只返回一个扁平的舰船名列表。阵营判断由后续分析阶段另行处理。
+        3. 同名舰船若出现多次（双方都有同型舰），按出现次数重复列出。
         4. 若某项识别不确定，宁可省略也不要编造。
 
         严格只输出如下 JSON，不要任何额外文字、不要 Markdown 代码块标记：
-        {"allies":["舰船名1","舰船名2"],"enemies":["舰船名1","舰船名2"]}
+        {"ships":["舰船名1","舰船名2","舰船名3"]}
         """;
 
     public async Task<ShipRecognitionResult> RecognizeShipsAsync(BitmapSource lineupImage, CancellationToken ct = default)
@@ -201,7 +226,7 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
                 throw new InvalidOperationException("缺少阵容截图。");
 
             var imageBase64 = ScreenCaptureService.EncodeToBase64(lineupImage);
-            var userText = "请识别这张《战舰世界》开局阵容截图中的舰船名，按我方/敌方分组，严格只输出 JSON。";
+            var userText = "请识别这张《战舰世界》开局阵容截图中的所有舰船名，不分阵营返回扁平列表，严格只输出 JSON。";
             var payload = BuildPayload(RecognitionSystemPrompt, userText, imageBase64);
 
             var httpReq = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions");
@@ -236,7 +261,7 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         }
     }
 
-    /// <summary>从 AI 返回文本中提取 allies/enemies JSON</summary>
+    /// <summary>从 AI 返回文本中提取 ships JSON 扁平列表</summary>
     private static void ParseLineupJson(string content, ShipRecognitionResult result)
     {
         // 去掉可能的 ```json ... ``` 包裹
@@ -253,14 +278,10 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         try
         {
             var node = JsonNode.Parse(text);
-            var allies = node?["allies"];
-            var enemies = node?["enemies"];
-            if (allies is JsonArray arrA)
-                result.Allies = arrA.Select(x => x?.ToString()?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!).ToList();
-            if (enemies is JsonArray arrE)
-                result.Enemies = arrE.Select(x => x?.ToString()?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!).ToList();
+            if (node?["ships"] is JsonArray arr)
+                result.Ships = arr.Select(x => x?.ToString()?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!).ToList();
 
-            result.Success = result.Allies.Count > 0 || result.Enemies.Count > 0;
+            result.Success = result.Ships.Count > 0;
             if (!result.Success)
                 result.Error = "AI 未识别到任何舰船名，请重试或手动输入。";
         }

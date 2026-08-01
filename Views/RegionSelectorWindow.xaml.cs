@@ -2,13 +2,15 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 
 namespace WoWSBattleAssistant.Views;
 
 /// <summary>
-/// 全屏框选窗口。用户拖拽选择小地图区域，返回物理像素坐标的 Rect。
+/// 全屏框选窗口。用户拖拽选择区域，返回物理像素坐标的 Rect。
 /// 用 Win32 GetCursorPos 获取物理坐标，与 Graphics.CopyFromScreen 一致，避免 DPI 错位。
+/// 关键：窗口带 WS_EX_NOACTIVATE，不抢占游戏焦点，键盘继续送到游戏；本窗口只靠鼠标框选。
 /// </summary>
 public partial class RegionSelectorWindow : Window
 {
@@ -17,6 +19,15 @@ public partial class RegionSelectorWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    private const int GWL_EXSTYLE = -20;
+    private const int WS_EX_NOACTIVATE = 0x08000000;
 
     private Point _startPhys; // 物理像素起点
     private Point _endPhys;
@@ -31,7 +42,16 @@ public partial class RegionSelectorWindow : Window
     {
         InitializeComponent();
         Loaded += RegionSelectorWindow_Loaded;
+        SourceInitialized += RegionSelectorWindow_SourceInitialized;
         KeyDown += RegionSelectorWindow_KeyDown;
+    }
+
+    /// <summary>窗口 HWND 创建后立即加 WS_EX_NOACTIVATE，防止 ShowDialog 抢走游戏焦点</summary>
+    private void RegionSelectorWindow_SourceInitialized(object? sender, EventArgs e)
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        var ex = GetWindowLong(hwnd, GWL_EXSTYLE);
+        SetWindowLong(hwnd, GWL_EXSTYLE, ex | WS_EX_NOACTIVATE);
     }
 
     private void RegionSelectorWindow_Loaded(object sender, RoutedEventArgs e)
@@ -61,6 +81,14 @@ public partial class RegionSelectorWindow : Window
             DialogResult = false;
             Close();
         }
+    }
+
+    /// <summary>右键单击取消框选（由于窗口不获焦，ESC 可能收不到，提供右键兜底）</summary>
+    private void DrawCanvas_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        SelectedRegion = Rect.Empty;
+        DialogResult = false;
+        Close();
     }
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)

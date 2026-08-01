@@ -29,9 +29,6 @@ public partial class MainWindow : Window
     private bool _lineupReady;   // 阵容识别成功（或手动填了名字）
     private bool _minimapReady;  // 小地图已截
 
-    // 识别到的我方舰船列表（用户从中选一艘作为 MyShip，剩下的进 Allies）
-    private readonly List<string> _recognizedAllies = new();
-
     public MainWindow()
     {
         InitializeComponent();
@@ -127,11 +124,9 @@ public partial class MainWindow : Window
         _minimapImage = null;
         _lineupReady = false;
         _minimapReady = false;
-        _recognizedAllies.Clear();
 
         TxtMyShip.Text = "";
-        TxtAllies.Text = "";
-        TxtEnemies.Text = "";
+        TxtAllShips.Text = "";
         CboMyShip.Items.Clear();
 
         ImgLineupPreview.Source = null;
@@ -165,6 +160,15 @@ public partial class MainWindow : Window
         Step2Details.Visibility = vis;
         BtnCollapse.Content = _collapsed ? "▼" : "▲";
         TxtFooter.Visibility = vis; // 折叠时也隐藏底部用时信息
+    }
+
+    // ===== 屏蔽主窗口一切按键(只放行 TextBox 文本输入) =====
+    // 用户常按住游戏内的 TAB(显示阵容)同时操作本程序,若不屏蔽,TAB 会在按钮间循环焦点。
+    // 只允许在 TextBox 内打字;其余按键一律吞掉,避免焦点乱跳、按钮被空格/回车误触发。
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Keyboard.FocusedElement is System.Windows.Controls.TextBox) return;
+        e.Handled = true;
     }
 
     // ===== 步骤①：截阵容 → AI 识别 =====
@@ -231,23 +235,41 @@ public partial class MainWindow : Window
             {
                 TxtLineupStatus.Text = "❌ 识别失败：" + rec.Error;
                 TxtStatus.Text = "识别失败，可手动填写舰船名";
-                // 识别失败也允许用户手动填写，所以不阻止 _lineupReady 通过手动输入推进
                 UpdateAnalyzeButton();
                 return;
             }
 
-            // 4. 填表：我方全部进 Allies 框 + 填下拉框，敌方进 Enemies 框
-            _recognizedAllies.Clear();
-            _recognizedAllies.AddRange(rec.Allies);
+            // 用数据库过滤：只保留真实存在的舰船，并把名字归一化为数据库标准名
+            // （AI 常把用户名误认成舰船，必须剔除）
+            var recognized = rec.Ships;
+            List<string> filtered;
+            if (_database.IsLoaded)
+            {
+                filtered = FilterToKnownShips(recognized, out int dropped);
+                if (filtered.Count == 0 && recognized.Count > 0)
+                {
+                    // 全被过滤掉——可能是数据未命中或识别全是用户名，保留原名单让用户手动修
+                    filtered = recognized;
+                    TxtLineupStatus.Text = $"⚠️ 识别到 {recognized.Count} 个名称但无一命中知识库，已保留原值供你手动修正。";
+                }
+                else
+                {
+                    TxtLineupStatus.Text = $"✅ 识别 {recognized.Count} 项，命中 {filtered.Count} 艘真实舰船" +
+                        (dropped > 0 ? $"（剔除 {dropped} 个非舰船名/用户名）" : "") + "。请从下拉框指定你的战舰。";
+                }
+            }
+            else
+            {
+                filtered = recognized;
+                TxtLineupStatus.Text = $"✅ 识别到 {recognized.Count} 项（知识库未加载，未做过滤）。请从下拉框指定你的战舰。";
+            }
 
             CboMyShip.Items.Clear();
-            foreach (var name in rec.Allies) CboMyShip.Items.Add(name);
+            foreach (var name in filtered.Distinct(StringComparer.OrdinalIgnoreCase)) CboMyShip.Items.Add(name);
 
-            TxtAllies.Text = string.Join("、", rec.Allies);
-            TxtEnemies.Text = string.Join("、", rec.Enemies);
+            TxtAllShips.Text = string.Join("、", filtered);
             TxtMyShip.Text = "";
 
-            TxtLineupStatus.Text = $"✅ 识别到 我方{rec.Allies.Count}艘 / 敌方{rec.Enemies.Count}艘。请从下拉框指定你的战舰。";
             TxtStatus.Text = "阵容识别完成，请指定你的战舰";
             _lineupReady = true;
             UpdateAnalyzeButton();
@@ -261,6 +283,7 @@ public partial class MainWindow : Window
         finally
         {
             BtnCaptureLineup.IsEnabled = true;
+            _cts = null; // ★ 必须复位,否则下次点击永远判定"上一次仍在进行中"
         }
     }
 
@@ -286,13 +309,9 @@ public partial class MainWindow : Window
     {
         if (string.IsNullOrWhiteSpace(shipName)) return;
         TxtMyShip.Text = shipName;
-
-        // 从 Allies 框中移除这艘船
-        var allies = ParseNames(TxtAllies.Text);
-        allies.RemoveAll(s => string.Equals(s, shipName, StringComparison.OrdinalIgnoreCase));
-        TxtAllies.Text = string.Join("、", allies);
-
-        TxtLineupStatus.Text = $"✅ 已指定你的战舰: {shipName}（剩余我方 {allies.Count} 艘）";
+        // 注意：扁平列表 TxtAllShips 保持完整（含用户自己的船），不删除。
+        // 它用于构建知识库；用户自己的船名作为锚点让 AI 在阵容图中定位我方阵营。
+        TxtLineupStatus.Text = $"✅ 已指定你的战舰: {shipName}（敌我由分析阶段 AI 看阵容图自行判断）";
         _lineupReady = true;
         UpdateAnalyzeButton();
     }
@@ -342,8 +361,7 @@ public partial class MainWindow : Window
         var myShipOk = !string.IsNullOrWhiteSpace(TxtMyShip.Text.Trim());
         var lineupTouched = _lineupReady
             || !string.IsNullOrWhiteSpace(TxtMyShip.Text.Trim())
-            || !string.IsNullOrWhiteSpace(TxtAllies.Text.Trim())
-            || !string.IsNullOrWhiteSpace(TxtEnemies.Text.Trim());
+            || !string.IsNullOrWhiteSpace(TxtAllShips.Text.Trim());
         BtnAnalyze.IsEnabled = lineupTouched && _minimapReady && myShipOk;
     }
 
@@ -386,23 +404,26 @@ public partial class MainWindow : Window
 
         try
         {
-            // 1. 构建知识库
-            var enemyNames = ParseNames(TxtEnemies.Text);
-            var allyNames = ParseNames(TxtAllies.Text);
-            var allNames = new List<string> { myShip };
-            allNames.AddRange(enemyNames);
-            allNames.AddRange(allyNames);
+            // 1. 构建知识库（用扁平列表里所有舰船名，不分敌我）
+            var allNames = ParseNames(TxtAllShips.Text);
+            // 确保用户自己的船也在名单里（作为锚点）
+            if (!string.IsNullOrWhiteSpace(myShip) &&
+                !allNames.Any(n => string.Equals(n, myShip, StringComparison.OrdinalIgnoreCase)))
+            {
+                allNames.Insert(0, myShip);
+            }
             var kbText = _database.BuildKnowledgeText(allNames);
 
-            // 2. 调 AI 分析
+            // 2. 调 AI 分析（阵容图 + 小地图两张图一起发，敌我由 AI 看阵容图判断）
             var analyzer = AIAnalyzerFactory.Create(_settings);
             var req = new BattleAnalysisRequest
             {
                 MinimapImage = _minimapImage,
                 ImageBase64 = ScreenCaptureService.EncodeToBase64(_minimapImage),
+                LineupImage = _lineupImage,
+                LineupImageBase64 = _lineupImage != null ? ScreenCaptureService.EncodeToBase64(_lineupImage) : "",
                 MyShip = myShip,
-                AlliedShips = string.Join("、", allyNames),
-                EnemyShips = string.Join("、", enemyNames),
+                AllShips = string.Join("、", allNames),
                 KnowledgeBaseText = kbText,
                 SystemPrompt = _settings.SystemPrompt
             };
@@ -430,6 +451,7 @@ public partial class MainWindow : Window
         finally
         {
             UpdateAnalyzeButton();
+            _cts = null; // ★ 必须复位
         }
     }
 
@@ -447,5 +469,28 @@ public partial class MainWindow : Window
     private static int HitCount(string kbText)
     {
         return kbText.Count(c => c == '【');
+    }
+
+    /// <summary>
+    /// 把识别到的舰船名用知识库过滤：只保留真实存在的舰船，并归一化为数据库标准名。
+    /// 不去重——双方同型舰会出现两次，保留以反映真实阵容（知识库构建时会自行去重参数）。
+    /// 带长度校验：若匹配靠"包含"且长度差过大，视为用户名误匹配而剔除
+    /// （例如用户名"YamatoFan"碰巧包含船名"Yamato"，会被排除）。
+    /// </summary>
+    private List<string> FilterToKnownShips(List<string> recognized, out int dropped)
+    {
+        dropped = 0;
+        var result = new List<string>();
+        foreach (var raw in recognized)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) { dropped++; continue; }
+            var ship = _database.TryGetShip(raw);
+            if (ship == null) { dropped++; continue; }
+            var canonical = ship["name"]?.ToString()?.Trim() ?? raw.Trim();
+            // 长度差过大说明是"包含"误匹配（用户名夹带了船名），剔除
+            if (Math.Abs(canonical.Length - raw.Trim().Length) > 2) { dropped++; continue; }
+            result.Add(canonical); // 保留重复（双方同型舰）
+        }
+        return result;
     }
 }

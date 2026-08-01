@@ -10,7 +10,23 @@
         Topmost="True"
         ShowInTaskbar="True"
         WindowStartupLocation="Manual"
-        Background="Transparent">
+        Background="Transparent"
+        PreviewKeyDown="Window_PreviewKeyDown">
+
+    <Window.Resources>
+        <!-- 按钮不可获焦、不参与 Tab 导航，避免按住 TAB 时焦点在按钮间乱跳 -->
+        <Style TargetType="Button">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="IsTabStop" Value="False"/>
+        </Style>
+        <!-- 文本框/下拉只屏蔽 Tab 导航，仍可用鼠标点击获焦输入 -->
+        <Style TargetType="TextBox">
+            <Setter Property="IsTabStop" Value="False"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="IsTabStop" Value="False"/>
+        </Style>
+    </Window.Resources>
 
     <Border x:Name="RootBorder" Background="#EE1A1B2E" CornerRadius="10" BorderBrush="#FF4FC3F7" BorderThickness="1">
         <Border.Effect>
@@ -117,17 +133,12 @@
                                          BorderBrush="#FF3A3B55" Padding="6,4" Margin="0,0,0,6"
                                          TextChanged="TxtInput_TextChanged"/>
 
-                                <TextBlock Text="我方其他战舰（可编辑修正）" Foreground="#FFBDBDBD" FontSize="12" Margin="0,0,0,2"/>
-                                <TextBox x:Name="TxtAllies" Background="#FF13141F" Foreground="White"
-                                         BorderBrush="#FF3A3B55" Padding="6,4" Margin="0,0,0,6"
-                                         AcceptsReturn="True" TextWrapping="Wrap" Height="48"
-                                         VerticalScrollBarVisibility="Auto"/>
-
-                                <TextBlock Text="敌方战舰（可编辑修正）" Foreground="#FFBDBDBD" FontSize="12" Margin="0,0,0,2"/>
-                                <TextBox x:Name="TxtEnemies" Background="#FF13141F" Foreground="White"
+                                <TextBlock Text="本局所有舰船（扁平列表，不分敌我；可编辑修正）" Foreground="#FFBDBDBD" FontSize="12" Margin="0,0,0,2"/>
+                                <TextBox x:Name="TxtAllShips" Background="#FF13141F" Foreground="White"
                                          BorderBrush="#FF3A3B55" Padding="6,4" Margin="0,0,0,4"
-                                         AcceptsReturn="True" TextWrapping="Wrap" Height="48"
-                                         VerticalScrollBarVisibility="Auto"/>
+                                         AcceptsReturn="True" TextWrapping="Wrap" Height="64"
+                                         VerticalScrollBarVisibility="Auto"
+                                         TextChanged="TxtInput_TextChanged"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>

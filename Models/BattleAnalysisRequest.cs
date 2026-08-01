@@ -8,14 +8,14 @@ public sealed class BattleAnalysisRequest
     /// <summary>小地图截图</summary>
     public BitmapSource MinimapImage { get; set; } = null!;
 
+    /// <summary>开局阵容面板截图（用于 AI 自行判断敌我阵营）</summary>
+    public BitmapSource? LineupImage { get; set; }
+
     /// <summary>用户自己的战舰名称</summary>
     public string MyShip { get; set; } = string.Empty;
 
-    /// <summary>我方其他战舰名称（逗号或顿号分隔）</summary>
-    public string AlliedShips { get; set; } = string.Empty;
-
-    /// <summary>敌方战舰名称（逗号或顿号分隔）</summary>
-    public string EnemyShips { get; set; } = string.Empty;
+    /// <summary>本局所有舰船名称（扁平列表，不分敌我；敌我由 AI 看阵容图自行判断）</summary>
+    public string AllShips { get; set; } = string.Empty;
 
     /// <summary>从知识库预提取的相关战舰参数文本</summary>
     public string KnowledgeBaseText { get; set; } = string.Empty;
@@ -23,8 +23,11 @@ public sealed class BattleAnalysisRequest
     /// <summary>系统提示词（空则用各 Analyzer 内置默认）</summary>
     public string SystemPrompt { get; set; } = string.Empty;
 
-    /// <summary>截图的 Base64（PNG）</summary>
+    /// <summary>小地图截图的 Base64（PNG）</summary>
     public string ImageBase64 { get; set; } = string.Empty;
+
+    /// <summary>阵容截图的 Base64（PNG）</summary>
+    public string LineupImageBase64 { get; set; } = string.Empty;
 }
 
 /// <summary>分析结果</summary>
