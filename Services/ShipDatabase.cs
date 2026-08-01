@@ -187,6 +187,11 @@ public sealed class ShipDatabase
         if (p.TryGetValue("anti_aircraft_summary", out var aa))
             sb.Append($"\n  防空: {aa}");
 
+        // AI 评价（来源: 360 战舰助手服务端预生成, 可能为空/缺失）
+        var aiReview = ship["ai_review"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(aiReview))
+            sb.Append($"\n  AI评价(360): {aiReview}");
+
         return sb.ToString();
     }
 
