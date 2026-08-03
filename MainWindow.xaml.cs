@@ -519,7 +519,7 @@ public partial class MainWindow : Window
     {
         if (infos.Count == 0) return "";
         var sb = new StringBuilder();
-        sb.AppendLine("=== 玩家威胁评估（来自 shinoaki 联网查询，真人/人机判定 + 战绩）===");
+        sb.AppendLine("=== 玩家威胁评估（来自 shinoaki 联网查询，提供搜索结果与战绩数据供 AI 判断）===");
         foreach (var info in infos)
             sb.AppendLine(info.ToAiLine());
         return sb.ToString();
