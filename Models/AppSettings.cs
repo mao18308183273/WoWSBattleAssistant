@@ -18,9 +18,18 @@ public sealed class AppSettings
     public string QwenApiKey { get; set; } = string.Empty;
     public string QwenModel { get; set; } = "qwen-vl-plus"; // qwen-vl-plus / qwen-vl-max
 
+    // ===== DeepSeek 视觉(网页版逆向,需登录态) =====
+    /// <summary>authorization Bearer Token,从浏览器 F12 → Network → 任意 api 请求的 authorization 头复制(去掉 "Bearer " 前缀)</summary>
+    public string DeepSeekToken { get; set; } = string.Empty;
+    /// <summary>Cookie 整行(含 ds_session_id 等),从 F12 → Network → 请求头 cookie 复制。用于通过 WAF。</summary>
+    public string DeepSeekCookie { get; set; } = string.Empty;
+
     /// <summary>战舰数据 JSON 文件路径（945 艘船知识库）</summary>
     public string ShipDataPath { get; set; } =
         @"C:\Users\mao_z\Downloads\wows_ships_data_20260801_125351.json";
+
+    /// <summary>游戏服务器（用于 shinoaki 玩家战绩查询）。cn=国服, asia=亚服, eu=欧服, na=美服, ru=俄服</summary>
+    public string Server { get; set; } = "cn";
 
     /// <summary>小地图在屏幕上的区域（设备像素坐标）</summary>
     public Rect MinimapRegion { get; set; } = Rect.Empty;
@@ -40,6 +49,7 @@ public sealed class AppSettings
 
 public enum AiProvider
 {
-    Glm,    // 智谱 GLM-4V / GLM-4V-Plus
-    Qwen    // 阿里通义千问 VL
+    Glm,        // 智谱 GLM-4V / GLM-4V-Plus
+    Qwen,       // 阿里通义千问 VL
+    DeepSeek    // DeepSeek 网页版视觉(逆向,需登录态 Token+Cookie)
 }

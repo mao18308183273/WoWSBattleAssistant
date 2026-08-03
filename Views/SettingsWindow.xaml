@@ -19,6 +19,7 @@
                         <TextBlock Text="AI 模型" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
                         <RadioButton x:Name="RbGlm" Content="智谱 GLM-4V（国内免费额度，中文好）" Margin="0,4" GroupName="Ai"/>
                         <RadioButton x:Name="RbQwen" Content="通义千问 VL（阿里，免费额度）" Margin="0,4" GroupName="Ai"/>
+                        <RadioButton x:Name="RbDeepSeek" Content="DeepSeek 视觉（网页版逆向，需登录态，免费）" Margin="0,4" GroupName="Ai"/>
 
                         <TextBlock Text="GLM API Key" Margin="0,12,0,4" FontSize="12"/>
                         <PasswordBox x:Name="PbGlmKey" Margin="0,0,0,6"/>
@@ -31,6 +32,12 @@
                         <TextBlock Text="通义 模型" Margin="0,4,0,4" FontSize="12"/>
                         <ComboBox x:Name="CbQwenModel" Margin="0,0,0,6"/>
                         <TextBlock Text="获取 Key: 注册 https://dashscope.aliyun.com 后在控制台创建 API Key" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+
+                        <TextBlock Text="DeepSeek Token（authorization，去掉 Bearer 前缀）" Margin="0,12,0,4" FontSize="12"/>
+                        <PasswordBox x:Name="PbDeepSeekToken" Margin="0,0,0,6"/>
+                        <TextBlock Text="DeepSeek Cookie（整行）" Margin="0,4,0,4" FontSize="12"/>
+                        <TextBox x:Name="TxtDeepSeekCookie" Margin="0,0,0,6" AcceptsReturn="True" TextWrapping="Wrap" Height="50" VerticalScrollBarVisibility="Auto" FontSize="11"/>
+                        <TextBlock Text="获取方式：浏览器登录 chat.deepseek.com → F12 → Network → 点任意 api/v0 请求 → Headers → 复制 authorization(去 Bearer ) 与 cookie 整行。Token 过期需重新复制。本功能依赖本机 Node.js（用于 PoW 求解）。" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
 
@@ -49,6 +56,10 @@
                         </Grid>
                         <TextBlock x:Name="TxtShipCount" Text="" FontSize="11" Foreground="Gray" Margin="0,4,0,0"/>
                         <Button x:Name="BtnReload" Content="重新加载知识库" Padding="12,4" Margin="0,8,0,0" HorizontalAlignment="Left" Click="BtnReload_Click"/>
+
+                        <TextBlock Text="游戏服务器（用于玩家战绩查询）" Margin="0,12,0,4" FontSize="12"/>
+                        <ComboBox x:Name="CbServer" Margin="0,0,0,6"/>
+                        <TextBlock Text="用于在 wows.mgaia.top 后端查询玩家战绩以评估威胁。国服选 cn。" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
 

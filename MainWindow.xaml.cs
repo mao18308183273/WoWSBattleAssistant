@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Windows;
 using System.Windows.Input;
@@ -7,6 +8,7 @@ using System.Windows.Media.Imaging;
 using WoWSBattleAssistant.Models;
 using WoWSBattleAssistant.Services;
 using WoWSBattleAssistant.Services.AI;
+using WoWSBattleAssistant.Services.Shinoaki;
 using WoWSBattleAssistant.Views;
 
 namespace WoWSBattleAssistant;
@@ -28,6 +30,9 @@ public partial class MainWindow : Window
     private BitmapSource? _minimapImage;
     private bool _lineupReady;   // 阵容识别成功（或手动填了名字）
     private bool _minimapReady;  // 小地图已截
+
+    /// <summary>阵容识别得到的"玩家名+舰船名"配对（用于分析阶段查 shinoaki 战绩判真人/人机）</summary>
+    private List<PlayerShipPair> _playerShipPairs = new();
 
     public MainWindow()
     {
@@ -82,12 +87,20 @@ public partial class MainWindow : Window
 
     private void UpdateStatusBar()
     {
-        var provider = _settings.AiProvider == AiProvider.Glm
-            ? $"智谱 {_settings.GlmModel}"
-            : $"通义 {_settings.QwenModel}";
-        var keyOk = _settings.AiProvider == AiProvider.Glm
-            ? !string.IsNullOrWhiteSpace(_settings.GlmApiKey)
-            : !string.IsNullOrWhiteSpace(_settings.QwenApiKey);
+        var provider = _settings.AiProvider switch
+        {
+            AiProvider.Glm => $"智谱 {_settings.GlmModel}",
+            AiProvider.Qwen => $"通义 {_settings.QwenModel}",
+            AiProvider.DeepSeek => "DeepSeek 视觉",
+            _ => "未知"
+        };
+        var keyOk = _settings.AiProvider switch
+        {
+            AiProvider.Glm => !string.IsNullOrWhiteSpace(_settings.GlmApiKey),
+            AiProvider.Qwen => !string.IsNullOrWhiteSpace(_settings.QwenApiKey),
+            AiProvider.DeepSeek => !string.IsNullOrWhiteSpace(_settings.DeepSeekToken),
+            _ => false
+        };
         TxtModel.Text = keyOk ? $"模型: {provider}" : $"模型: {provider} (未填 Key)";
     }
 
@@ -124,6 +137,7 @@ public partial class MainWindow : Window
         _minimapImage = null;
         _lineupReady = false;
         _minimapReady = false;
+        _playerShipPairs = new();
 
         TxtMyShip.Text = "";
         TxtAllShips.Text = "";
@@ -185,9 +199,13 @@ public partial class MainWindow : Window
             MessageBox.Show("战舰知识库未加载，请检查数据文件路径。", "提示");
             return;
         }
-        var hasKey = _settings.AiProvider == AiProvider.Glm
-            ? !string.IsNullOrWhiteSpace(_settings.GlmApiKey)
-            : !string.IsNullOrWhiteSpace(_settings.QwenApiKey);
+        var hasKey = _settings.AiProvider switch
+        {
+            AiProvider.Glm => !string.IsNullOrWhiteSpace(_settings.GlmApiKey),
+            AiProvider.Qwen => !string.IsNullOrWhiteSpace(_settings.QwenApiKey),
+            AiProvider.DeepSeek => !string.IsNullOrWhiteSpace(_settings.DeepSeekToken),
+            _ => false
+        };
         if (!hasKey)
         {
             MessageBox.Show("未配置 API Key，请点⚙设置。", "提示");
@@ -242,6 +260,8 @@ public partial class MainWindow : Window
             // 用数据库过滤：只保留真实存在的舰船，并把名字归一化为数据库标准名
             // （AI 常把用户名误认成舰船，必须剔除）
             var recognized = rec.Ships;
+            // 保存识别到的玩家名+舰船名配对，供分析阶段查 shinoaki 战绩
+            _playerShipPairs = rec.PlayerShipPairs ?? new();
             List<string> filtered;
             if (_database.IsLoaded)
             {
@@ -414,6 +434,27 @@ public partial class MainWindow : Window
             }
             var kbText = _database.BuildKnowledgeText(allNames);
 
+            // 1.5 查询玩家战绩（shinoaki）：判真人/人机 + 提取 PR/胜率/伤害，供 AI 威胁评估
+            string playerThreatText = "";
+            if (_playerShipPairs.Count > 0)
+            {
+                TxtStatus.Text = "查询玩家战绩中（判真人/人机）...";
+                try
+                {
+                    var progress = new Progress<string>(s => TxtStatus.Text = s);
+                    var infos = await ShinoakiApiClient.AssessPlayersAsync(
+                        _playerShipPairs, _settings.Server, progress, _cts.Token);
+                    playerThreatText = BuildPlayerThreatText(infos);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    // 战绩查询失败不阻塞主流程，降级为无战绩数据（AI 回退看玩家名判断）
+                    playerThreatText = "";
+                    TxtStatus.Text = "玩家战绩查询失败（已降级）: " + ex.Message;
+                }
+            }
+
             // 2. 调 AI 分析（阵容图 + 小地图两张图一起发，敌我由 AI 看阵容图判断）
             var analyzer = AIAnalyzerFactory.Create(_settings);
             var req = new BattleAnalysisRequest
@@ -425,6 +466,7 @@ public partial class MainWindow : Window
                 MyShip = myShip,
                 AllShips = string.Join("、", allNames),
                 KnowledgeBaseText = kbText,
+                PlayerThreatText = playerThreatText,
                 SystemPrompt = _settings.SystemPrompt
             };
 
@@ -469,6 +511,17 @@ public partial class MainWindow : Window
     private static int HitCount(string kbText)
     {
         return kbText.Count(c => c == '【');
+    }
+
+    /// <summary>把玩家威胁评估结果格式化为给 AI 的文本块</summary>
+    private static string BuildPlayerThreatText(List<PlayerThreatInfo> infos)
+    {
+        if (infos.Count == 0) return "";
+        var sb = new StringBuilder();
+        sb.AppendLine("=== 玩家威胁评估（来自 shinoaki 联网查询，真人/人机判定 + 战绩）===");
+        foreach (var info in infos)
+            sb.AppendLine(info.ToAiLine());
+        return sb.ToString();
     }
 
     /// <summary>

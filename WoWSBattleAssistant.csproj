@@ -11,4 +11,10 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
+  <!-- DeepSeek PoW 求解器资源(嵌入到程序集,运行时释放到临时目录) -->
+  <ItemGroup>
+    <EmbeddedResource Include="Services\AI\DeepSeek\pow_solver.js" />
+    <EmbeddedResource Include="Services\AI\DeepSeek\sha3_wasm_bg.wasm" />
+  </ItemGroup>
+
 </Project>

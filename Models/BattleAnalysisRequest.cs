@@ -20,6 +20,10 @@ public sealed class BattleAnalysisRequest
     /// <summary>从知识库预提取的相关战舰参数文本</summary>
     public string KnowledgeBaseText { get; set; } = string.Empty;
 
+    /// <summary>玩家威胁评估文本（来自 shinoaki 战绩查询：真人/人机判定 + PR/胜率/伤害等）。
+    /// 由 MainWindow 在分析前注入，AI 据此而非"看玩家名风格"判断威胁。</summary>
+    public string PlayerThreatText { get; set; } = string.Empty;
+
     /// <summary>系统提示词（空则用各 Analyzer 内置默认）</summary>
     public string SystemPrompt { get; set; } = string.Empty;
 

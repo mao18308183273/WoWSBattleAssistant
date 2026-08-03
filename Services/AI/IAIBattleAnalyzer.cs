@@ -52,9 +52,10 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         - 若某舰不在知识库中，明确说"参数未知"，不要编造任何数值。
 
         【关键判断规则】
-        1. 人机 vs 真人：看阵容图中玩家名——名字里带冒号":"的是人机(AI)，没有冒号的是真人玩家。
-        2. 威胁评估：真人玩家通常比人机更危险、更可能带节奏；结合玩家名风格与所驾舰船性能综合判断哪几个真人最凶。
-        3. 优先目标：综合"舰船威胁度"与"是否真人"确定本局应优先处理的目标。
+        1. 人机 vs 真人：用户会在文本中提供"玩家威胁评估"清单，明确标注每个玩家是真人还是人机，真人还附带 PR/胜率/场均伤害/场均击杀/KD 等战绩。该清单来自联网查询，比看玩家名可靠，请以此为准。
+        2. 威胁评估：以提供的战绩数据为依据——PR 值越高越强（参考：<900 较弱, 900-1450 中等, 1450-2100 很好, >2100 优秀），胜率与场均伤害反映玩家水平与战舰发挥。结合舰船性能综合判断哪几个真人最凶、最可能带节奏。
+        3. 优先目标：综合"玩家战绩威胁度""舰船性能威胁""是否真人"确定本局应优先处理的目标。
+        4. 若清单缺失或某玩家战绩查询失败，回退到看阵容图玩家名判断（带冒号的是人机）。
 
         【容错】
         - 小地图上可能没有敌方舰船（开局对面未点亮）：此时威胁与策略基于阵容和参数推断，不要编造敌方位置。
@@ -64,8 +65,8 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         【输出】直接给以下四部分，中文，分点，简洁。可引用具体数值（如"隐蔽5.8km""主炮射程18km"）但不要整段抄参数，不要废话套话：
         1.【怎么玩这艘船】针对用户战舰，结合其参数特性给出本局打法要点：接敌距离、走位思路、消耗品时机、应避免的对抗。
         2.【敌方威胁评估】
-           - 先点明敌方有几艘是人机、几艘是真人（依据玩家名冒号）。
-           - 对真人玩家，结合其玩家名与舰船判断谁最凶、最可能带节奏，说明理由。
+           - 先点明敌方有几艘是人机、几艘是真人（依据提供的玩家威胁评估清单）。
+           - 对真人玩家，结合其战绩（PR/胜率/场均伤害）与所驾舰船判断谁最凶、最可能带节奏，说明理由。
            - 结合舰船性能（主炮口径/射程/隐蔽/鱼雷/机动/防空）说明每个重点目标的威胁点。
         3.【优先攻击目标】明确给出本局建议优先处理的目标（具体舰船+是否真人），一句话理由+克制手段。
         4.【整局局势与策略】结合小地图双方位置分布（若有红色敌舰）给出整体走向与关键决策（推进/转场/控点/视野/集火）。若敌方未点亮，给出开局预案。
@@ -139,7 +140,7 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         }
     }
 
-    /// <summary>构造用户提示词（含知识库与扁平舰船列表，不分敌我）</summary>
+    /// <summary>构造用户提示词（含知识库、扁平舰船列表、玩家威胁评估，不分敌我）</summary>
     protected virtual string BuildUserPrompt(BattleAnalysisRequest req)
     {
         var sb = new StringBuilder();
@@ -151,10 +152,13 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         sb.AppendLine($"【我的战舰】{req.MyShip}");
         sb.AppendLine($"【本局所有舰船】{req.AllShips}（含重复=双方同型舰）");
         sb.AppendLine();
+        if (!string.IsNullOrWhiteSpace(req.PlayerThreatText))
+            sb.AppendLine(req.PlayerThreatText);
+        sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(req.KnowledgeBaseText))
             sb.AppendLine(req.KnowledgeBaseText);
         sb.AppendLine();
-        sb.AppendLine("按系统提示的三部分输出，不要复述参数。");
+        sb.AppendLine("按系统提示的四部分输出，不要复述参数。威胁评估以上方玩家战绩清单为准。");
         return sb.ToString();
     }
 
@@ -209,16 +213,18 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
     protected virtual string RecognitionSystemPrompt =>
         """
         你是《战舰世界》(World of Warships) 的图像识别助手。用户会提供一张游戏开局读秒阶段的双方阵容面板截图。
-        阵容面板包含两方所有舰船的名称。
+        阵容面板中每一行包含"玩家名"和其驾驶的"舰船名"。
 
         识别要求：
-        1. 提取图中出现的每一艘战舰的名称（游戏内显示的舰船名，如"大和""蒙大拿""Z-52"等）。
-        2. 不要区分敌我/左右阵营，只返回一个扁平的舰船名列表。阵营判断由后续分析阶段另行处理。
-        3. 同名舰船若出现多次（双方都有同型舰），按出现次数重复列出。
-        4. 若某项识别不确定，宁可省略也不要编造。
+        1. 提取图中每一行的玩家名与其驾驶的舰船名，组成配对。舰船名为游戏内显示名（如"大和""蒙大拿""Z-52"等）。
+        2. 不要区分敌我/左右阵营，阵营判断由后续阶段处理。
+        3. 同名舰船若出现多次（双方都有同型舰），按出现次数重复列出，各自对应其玩家名。
+        4. 玩家名要尽量完整准确——后续会用它联网查询玩家战绩，错一个字就查不到，因此宁可照搬图上原文也不要改写。
+        5. 人机玩家的名字通常带冒号（如":AI:xxx"），原样保留即可。
+        6. 若某行看不清，宁可省略也不要编造。
 
         严格只输出如下 JSON，不要任何额外文字、不要 Markdown 代码块标记：
-        {"ships":["舰船名1","舰船名2","舰船名3"]}
+        {"pairs":[{"player":"玩家名1","ship":"舰船名1"},{"player":"玩家名2","ship":"舰船名2"}]}
         """;
 
     public async Task<ShipRecognitionResult> RecognizeShipsAsync(BitmapSource lineupImage, CancellationToken ct = default)
@@ -232,7 +238,7 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
                 throw new InvalidOperationException("缺少阵容截图。");
 
             var imageBase64 = ScreenCaptureService.EncodeToBase64(lineupImage);
-            var userText = "请识别这张《战舰世界》开局阵容截图中的所有舰船名，不分阵营返回扁平列表，严格只输出 JSON。";
+            var userText = "请识别这张《战舰世界》开局阵容截图中每一行的玩家名与舰船名，组成配对返回，严格只输出 JSON。";
             var payload = BuildPayload(RecognitionSystemPrompt, userText, imageBase64);
 
             var httpReq = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions");
@@ -267,7 +273,7 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         }
     }
 
-    /// <summary>从 AI 返回文本中提取 ships JSON 扁平列表</summary>
+    /// <summary>从 AI 返回文本中提取配对列表（优先）或扁平舰船名列表（兼容）</summary>
     private static void ParseLineupJson(string content, ShipRecognitionResult result)
     {
         // 去掉可能的 ```json ... ``` 包裹
@@ -284,8 +290,26 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         try
         {
             var node = JsonNode.Parse(text);
-            if (node?["ships"] is JsonArray arr)
+
+            // 优先解析配对结构
+            if (node?["pairs"] is JsonArray pairs)
+            {
+                foreach (var p in pairs)
+                {
+                    if (p is not JsonObject po) continue;
+                    var player = po["player"]?.ToString()?.Trim() ?? "";
+                    var ship = po["ship"]?.ToString()?.Trim() ?? "";
+                    if (string.IsNullOrEmpty(ship)) continue;
+                    result.PlayerShipPairs.Add(new PlayerShipPair { Player = player, Ship = ship });
+                    result.Ships.Add(ship);
+                }
+            }
+
+            // 兼容旧格式：ships 扁平列表
+            if (result.Ships.Count == 0 && node?["ships"] is JsonArray arr)
+            {
                 result.Ships = arr.Select(x => x?.ToString()?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!).ToList();
+            }
 
             result.Success = result.Ships.Count > 0;
             if (!result.Success)

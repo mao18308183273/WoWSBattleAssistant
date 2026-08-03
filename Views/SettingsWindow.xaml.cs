@@ -36,6 +36,8 @@ public partial class SettingsWindow : Window
             GlmModel = s.GlmModel,
             QwenApiKey = s.QwenApiKey,
             QwenModel = s.QwenModel,
+            DeepSeekToken = s.DeepSeekToken,
+            DeepSeekCookie = s.DeepSeekCookie,
             ShipDataPath = s.ShipDataPath,
             MinimapRegion = s.MinimapRegion,
             WindowLeft = s.WindowLeft,
@@ -44,6 +46,7 @@ public partial class SettingsWindow : Window
             WindowHeight = s.WindowHeight,
             AttachKnowledgeBase = s.AttachKnowledgeBase,
             SystemPrompt = s.SystemPrompt,
+            Server = s.Server,
         };
     }
 
@@ -51,6 +54,7 @@ public partial class SettingsWindow : Window
     {
         RbGlm.IsChecked = _draft.AiProvider == AiProvider.Glm;
         RbQwen.IsChecked = _draft.AiProvider == AiProvider.Qwen;
+        RbDeepSeek.IsChecked = _draft.AiProvider == AiProvider.DeepSeek;
 
         PbGlmKey.Password = _draft.GlmApiKey;
         CbGlmModel.Items.Clear();
@@ -66,8 +70,20 @@ public partial class SettingsWindow : Window
             CbQwenModel.Items.Add(_draft.QwenModel);
         CbQwenModel.SelectedItem = string.IsNullOrEmpty(_draft.QwenModel) ? "qwen-vl-plus" : _draft.QwenModel;
 
+        PbDeepSeekToken.Password = _draft.DeepSeekToken;
+        TxtDeepSeekCookie.Text = _draft.DeepSeekCookie;
+
         TxtShipDataPath.Text = _draft.ShipDataPath;
         UpdateShipCount();
+
+        // 服务器选择
+        CbServer.Items.Clear();
+        CbServer.Items.Add("cn");  // 国服
+        CbServer.Items.Add("asia"); // 亚服
+        CbServer.Items.Add("eu");   // 欧服
+        CbServer.Items.Add("na");   // 美服
+        CbServer.Items.Add("ru");   // 俄服
+        CbServer.SelectedItem = string.IsNullOrWhiteSpace(_draft.Server) ? "cn" : _draft.Server;
 
         UpdateRegionText();
         TxtSystemPrompt.Text = _draft.SystemPrompt;
@@ -162,13 +178,18 @@ public partial class SettingsWindow : Window
     private void BtnSave_Click(object sender, RoutedEventArgs e)
     {
         // 把 UI 值写回 _draft
-        _draft.AiProvider = RbGlm.IsChecked == true ? AiProvider.Glm : AiProvider.Qwen;
+        _draft.AiProvider = RbGlm.IsChecked == true ? AiProvider.Glm
+            : RbDeepSeek.IsChecked == true ? AiProvider.DeepSeek
+            : AiProvider.Qwen;
         _draft.GlmApiKey = PbGlmKey.Password;
         _draft.GlmModel = CbGlmModel.SelectedItem?.ToString() ?? "glm-4v";
         _draft.QwenApiKey = PbQwenKey.Password;
         _draft.QwenModel = CbQwenModel.SelectedItem?.ToString() ?? "qwen-vl-plus";
+        _draft.DeepSeekToken = PbDeepSeekToken.Password;
+        _draft.DeepSeekCookie = TxtDeepSeekCookie.Text;
         _draft.ShipDataPath = TxtShipDataPath.Text.Trim();
         _draft.SystemPrompt = TxtSystemPrompt.Text;
+        _draft.Server = CbServer.SelectedItem?.ToString() ?? "cn";
 
         // 校验
         if (_draft.AiProvider == AiProvider.Glm && string.IsNullOrWhiteSpace(_draft.GlmApiKey))
@@ -179,6 +200,11 @@ public partial class SettingsWindow : Window
         if (_draft.AiProvider == AiProvider.Qwen && string.IsNullOrWhiteSpace(_draft.QwenApiKey))
         {
             MessageBox.Show("请填写通义 API Key", "提示");
+            return;
+        }
+        if (_draft.AiProvider == AiProvider.DeepSeek && string.IsNullOrWhiteSpace(_draft.DeepSeekToken))
+        {
+            MessageBox.Show("请填写 DeepSeek Token", "提示");
             return;
         }
 
@@ -196,8 +222,11 @@ public partial class SettingsWindow : Window
         dst.GlmModel = src.GlmModel;
         dst.QwenApiKey = src.QwenApiKey;
         dst.QwenModel = src.QwenModel;
+        dst.DeepSeekToken = src.DeepSeekToken;
+        dst.DeepSeekCookie = src.DeepSeekCookie;
         dst.ShipDataPath = src.ShipDataPath;
         dst.MinimapRegion = src.MinimapRegion;
         dst.SystemPrompt = src.SystemPrompt;
+        dst.Server = src.Server;
     }
 }
