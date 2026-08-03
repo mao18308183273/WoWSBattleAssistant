@@ -1,12 +1,14 @@
 # WoWSBattleAssistant · 战舰世界实时战斗分析助手
 
+![version](https://img.shields.io/badge/version-2.0.0-16A085) ![license](https://img.shields.io/badge/license-personal-F39C12) ![dotnet](https://img.shields.io/badge/.NET-10-blue) ![platform](https://img.shields.io/badge/platform-Win10%2B11-lightgrey)
+
 一个为《战舰世界》（World of Warships）做的实时战术分析悬浮窗工具。开局读秒阶段截一张阵容图、对局中截一张小地图，AI 结合双方舰船参数、**联网查询的玩家战绩**与小地图态势，给出本局的打法建议、威胁评估与优先目标。
 
 ## 功能特性
 
 - **悬浮窗设计**：半透明置顶，不遮挡游戏；截图瞬间自动隐藏避免入镜，截完恢复。
 - **三步式流程**：截阵容 → AI 识别舰船名 → 截小地图 → AI 综合分析，操作直观。
-- **AI 视觉识别**：自动识别阵容面板中的「玩家名 + 舰船名」配对，并用知识库过滤掉 AI 把玩家名误判成舰船名的情况。
+- **AI 视觉识别**（V2.0.0 重构）：自动识别阵容面板中的「玩家名 + 舰船名」配对，并用知识库过滤掉 AI 把玩家名误判成舰船名的情况。**分析阶段 AI 会自行从阵容图的「队友/敌方」标题判断敌我**，不再完全依赖前置识别结果，识别错误时 AI 能以阵容图为准自行纠正。
 - **玩家战绩联网查询**：识别完成后自动调用 [shinoaki](https://wows.mgaia.top) 公开 API：
   - 按玩家名搜索判定**真人 / 人机**（搜到 = 真人；玩家名含冒号或搜不到 = 人机）。
   - 真人玩家拉取战绩：PR 值与评级、总场数、胜率、场均伤害、场均击杀、KD。
@@ -187,6 +189,34 @@ dotnet publish -c Release -r win-x64 --self-contained true \
 ```
 
 > 使用 DeepSeek 引擎时，目标机仍需单独安装 Node.js（PoW 求解依赖）。
+
+## 下载
+
+直接到 [GitHub Releases](https://github.com/mao18308183273/WoWSBattleAssistant/releases) 下载最新版：
+
+- **WoWSBattleAssistant.exe**：单文件主程序，约 60MB，自包含运行时，双击即用
+- **wows_ships_data_*.json**：战舰数据文件，首次使用需在程序设置中加载
+
+## 更新日志
+
+### V2.0.0（2026-08-03）
+
+**核心改进 · AI 自主识别敌我**
+- 重构 AI 提示词：分析阶段 AI **自行从阵容图的「队友」（绿色标题）/「敌方」（红色标题）判断敌我**，不再依赖前置识别结果。
+- 识别与解耦：前置识别仅作参考，AI 以阵容图实际画面为准自行验证，识别错误时 AI 能纠正。
+- 明确玩家名/舰船名识别规则：等级前缀为罗马数字（I-XII），紧随空格+舰船名，避免拆分。
+
+**其他改进**
+- 完善 `PlayerThreatInfo` 模型，威胁清单字段更规范。
+- 优化 `ShinoakiApiClient` 战绩查询逻辑。
+- DeepSeek 引擎提示词同步重构，敌我判断逻辑统一。
+
+### V1.0.0（2026-08-01）
+
+- 首个版本：悬浮窗三步式分析流程。
+- 三 AI 引擎：智谱 GLM-4V / 通义千问 VL / DeepSeek 视觉。
+- 945 艘船参数知识库 + shinoaki 玩家战绩联网查询。
+- 纯视觉方案，无安全风险，完全开源。
 
 ## 许可
 
