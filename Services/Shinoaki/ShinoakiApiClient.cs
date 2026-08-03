@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using WoWSBattleAssistant.Models;
@@ -28,14 +29,19 @@ public sealed class ShinoakiApiClient
     /// <summary>
     /// 按玩家名搜索。返回首个匹配的 accountId；搜不到或异常返回 null。
     /// 搜索为精确匹配真实玩家名：搜得到=真人，搜不到=人机/不存在。
+    /// 注意：查询前会自动剥离玩家名中的 [军团] 标签。
     /// </summary>
     public static async Task<long?> SearchPlayerAsync(string userName, string server,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(userName)) return null;
 
+        // 去除玩家名中的 [军团] 标签 —— shinoaki API 不识别带 [军团] 前缀的名字
+        var cleanName = Regex.Replace(userName, @"\[.*?\]", "").Trim();
+        if (string.IsNullOrWhiteSpace(cleanName)) return null;
+
         var url = $"{BaseUrl}/public/wows/account/search/{server}/user";
-        var body = JsonSerializer.Serialize(new { userName, server, limit = 1 });
+        var body = JsonSerializer.Serialize(new { userName = cleanName, server, limit = 1 });
 
         try
         {
@@ -141,9 +147,10 @@ public sealed class ShinoakiApiClient
 
     /// <summary>
     /// 批量评估一组"玩家名+舰船名"配对的真人/人机身份与战绩。
-    /// 判定规则：
-    ///   1. 玩家名含冒号':' → 人机（不查网络，快速判断）
-    ///   2. 否则搜索 shinoaki：搜到=真人并查战绩；搜不到=人机
+    /// 判定规则（统一以 shinoaki 搜索结果为准）：
+    ///   搜索命中 → 真人，并查战绩；搜索未命中 → 人机。
+    /// 玩家名是否含冒号':' 仅作为辅助信号写进 JudgeReason，不再短路判定
+    /// （真人玩家名字也可能带冒号，不能凭冒号定人机）。
     /// 并发受限（5）避免限流；单个失败不影响整体。
     /// </summary>
     public static async Task<List<PlayerThreatInfo>> AssessPlayersAsync(
@@ -187,20 +194,11 @@ public sealed class ShinoakiApiClient
     {
         var name = pair.Player?.Trim() ?? "";
         var ship = pair.Ship?.Trim() ?? "";
+        var hasColon = name.Contains(':');
 
-        // 1. 冒号判断：名字带冒号的是人机
-        if (name.Contains(':'))
-        {
-            return new PlayerThreatInfo
-            {
-                UserName = name,
-                ShipName = ship,
-                IsRealPlayer = false,
-                JudgeReason = "玩家名含冒号"
-            };
-        }
-
-        // 2. 搜索判断真/人机
+        // 不再用"含冒号=人机"短路——真人玩家名字也可能带冒号。
+        // 统一交给 shinoaki 搜索：搜到=真人（查战绩）；搜不到=人机。
+        // 冒号作为辅助信号写进 JudgeReason，便于人工排查。
         var accountId = await SearchPlayerAsync(name, server, ct).ConfigureAwait(false);
         if (accountId == null)
         {
@@ -209,11 +207,19 @@ public sealed class ShinoakiApiClient
                 UserName = name,
                 ShipName = ship,
                 IsRealPlayer = false,
-                JudgeReason = "shinoaki 搜索未命中"
+                JudgeReason = hasColon
+                    ? "shinoaki 搜索未命中（玩家名含冒号，符合人机特征）"
+                    : "shinoaki 搜索未命中"
             };
         }
 
-        // 3. 真人 → 查战绩
-        return await GetPlayerInfoAsync(accountId.Value, server, name, ship, ct).ConfigureAwait(false);
+        // 真人 → 查战绩
+        var info = await GetPlayerInfoAsync(accountId.Value, server, name, ship, ct).ConfigureAwait(false);
+        if (hasColon && !info.HasError)
+        {
+            // 含冒号但搜索命中——确为真人，覆盖默认的"搜索命中"以保留这个矛盾信号
+            info.JudgeReason = "shinoaki 搜索命中（玩家名含冒号但确为真人）";
+        }
+        return info;
     }
 }

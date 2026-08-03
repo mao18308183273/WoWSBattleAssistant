@@ -17,6 +17,9 @@ public sealed class ShipDatabase
     /// <summary>船名(原始) -> 船的 JsonNode</summary>
     private readonly Dictionary<string, JsonObject> _byName = new();
 
+    /// <summary>"vlevel name"（如 "VII 沙恩霍斯特"）-> 船的 JsonNode</summary>
+    private readonly Dictionary<string, JsonObject> _byVlevelName = new();
+
     /// <summary>小写船名 -> 原始船名（用于大小写不敏感匹配）</summary>
     private readonly Dictionary<string, string> _lowerToName = new();
 
@@ -39,6 +42,7 @@ public sealed class ShipDatabase
             throw new InvalidDataException("战舰数据文件不是 JSON 数组");
 
         _byName.Clear();
+        _byVlevelName.Clear();
         _lowerToName.Clear();
         foreach (var item in arr)
         {
@@ -47,19 +51,34 @@ public sealed class ShipDatabase
             if (string.IsNullOrEmpty(name)) continue;
             _byName[name] = obj;
             _lowerToName[name.ToLowerInvariant()] = name;
+
+            // 同时建立 "vlevel name" 索引（如 "VII 沙恩霍斯特"），用于区分重名舰船
+            var vlevel = obj["vlevel"]?.ToString().Trim();
+            if (!string.IsNullOrEmpty(vlevel))
+                _byVlevelName[$"{vlevel} {name}"] = obj;
         }
         _totalCount = _byName.Count;
         _loaded = true;
         progress?.Report($"已加载 {_totalCount} 艘战舰数据");
     }
 
-    /// <summary>按名称查找（支持大小写不敏感、去空格、部分匹配）</summary>
+    /// <summary>按名称查找（支持等级前缀精确匹配、大小写不敏感、去空格、部分匹配）</summary>
     public JsonObject? TryGetShip(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return null;
         var n = name.Trim();
 
-        // 1. 精确
+        // 0. 如果含等级前缀（如 "VII 沙恩霍斯特"），优先按 vlevel+name 精确匹配
+        if (_byVlevelName.TryGetValue(n, out var vlExact)) return vlExact;
+
+        // 0.1 大小写不敏感的 vlevel+name 匹配
+        var lowerVl = n.ToLowerInvariant();
+        foreach (var kv in _byVlevelName)
+        {
+            if (kv.Key.ToLowerInvariant() == lowerVl) return kv.Value;
+        }
+
+        // 1. 纯名精确
         if (_byName.TryGetValue(n, out var exact)) return exact;
 
         // 2. 大小写不敏感

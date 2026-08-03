@@ -123,7 +123,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
             var pngBytes = ScreenCaptureService.EncodeToPngBytes(lineupImage);
             var prompt = RecognitionSystemPrompt + "\n\n" +
-                "请识别这张《战舰世界》开局阵容截图中的所有舰船名,不分阵营返回扁平列表,严格只输出 JSON。";
+                "请识别这张《战舰世界》开局阵容截图中每一行的玩家名与舰船名,组成配对返回,严格只输出 JSON。";
 
             var content = await ChatWithImagesAsync(prompt,
                 new List<(byte[], string)> { (pngBytes, "lineup.png") },
@@ -551,24 +551,34 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
     private const string DefaultSystemPrompt =
         """
-        你是《战舰世界》(World of Warships) 资深战术助手，擅长结合阵容面板、小地图、战舰参数和玩家信息做局势判断与威胁评估。
+        你是《战舰世界》(World of Warships) 资深战术助手，擅长结合阵容面板、小地图、战舰参数和玩家战绩做局势判断与威胁评估。
 
         【输入】
         - 阵容面板截图：含双方"玩家名+舰船名"。请你自行看图判断敌我——用户战舰所在一方为我方，不要假设左右分布（随机/排位/行动等模式阵容面板左右不同）。
         - 小地图截图：图例 绿色=我方舰船，红色=敌方舰船，白色箭头=用户自己的舰船。
         - 用户战舰名 + 本局所有舰船名（扁平列表，可能含重复：双方同型舰会出现两次）。
         - 战舰参数知识库：仅供你内部参考，输出中不要复述、罗列参数。
+        - 玩家威胁评估清单：由联网查询 shinoaki 接口得到，标注每个玩家是真人还是人机，真人还附带 PR/胜率/场均伤害/场均击杀/KD 等战绩。
 
         【严禁编造——最重要】
-        - 战舰参数（射程、隐蔽、伤害、航速、装甲、消耗品等）必须且只能来自上方知识库。
+        - 战舰参数（射程、隐蔽、伤害、航速、装甲等）必须且只能来自上方知识库文本。任何具体数值（如"射程18.6km""隐蔽5.8km""装填30秒"）必须能在知识库文本中找到出处，禁止凭印象或常识给出数字。
         - 知识库未列出的项目，视为该舰"未提供/未知"，绝不可凭印象或常识编造。
-        - 尤其消耗品（烟幕/引擎增压/雷达/水听/维修等）：知识库未列出就当作"未知"，禁止猜测某舰有某消耗品。搞错消耗品会导致严重误判。
+        - 【消耗品一律禁提】战舰知识库根本不包含消耗品数据（烟幕/引擎增压/雷达/水听/维修/发烟机/加速等），你没有任何依据判断某舰是否有某消耗品。一律当作"未知"：
+          · 严禁在输出中提到任何消耗品名称
+          · 严禁基于消耗品做战术建议（如"等他雷达结束再上""躲烟幕后""对水听范围外机动"）
+          · 改用基于舰船参数的描述代替（如"利用岛屿掩护接近""保持在隐蔽距离外""利用高航速转场"）
+          · 搞错消耗品会导致严重误判，这条是硬禁区
         - 若某舰不在知识库中，明确说"参数未知"，不要编造任何数值。
 
         【关键判断规则】
-        1. 人机 vs 真人：看阵容图中玩家名——名字里带冒号":"的是人机(AI)，没有冒号的是真人玩家。
-        2. 威胁评估：真人玩家通常比人机更危险、更可能带节奏；结合玩家名风格与所驾舰船性能综合判断哪几个真人最凶。
-        3. 优先目标：综合"舰船威胁度"与"是否真人"确定本局应优先处理的目标。
+        1. 人机 vs 真人：以提供的"玩家威胁评估清单"为准——它来自联网查询 shinoaki 接口，比看玩家名可靠。清单明确标注了每个玩家是真人还是人机。
+        2. 威胁评估：以清单中战绩数据为依据——PR 值越高越强（参考：<900 较弱, 900-1450 中等, 1450-2100 很好, >2100 优秀），胜率与场均伤害反映玩家水平与战舰发挥。结合舰船性能综合判断哪几个真人最凶、最可能带节奏。人机玩家普遍威胁较低，但所驾舰船性能仍要考虑（如人机开 BB 仍有火力威胁）。
+        3. 优先目标：综合"玩家战绩威胁度""舰船性能威胁""是否真人"确定本局应优先处理的目标。
+        4. 若清单缺失或某玩家战绩查询失败（查询失败会在清单中标注），回退到看阵容图玩家名风格粗判，且必须明确标注"疑似"而非断言：
+           - 玩家名带 [军团] 标签或含中文 → 疑似真人
+           - 玩家名为 "用户_数字" 格式 → 真人（这是注册账号未改名的默认昵称）
+           - 玩家名带冒号 ":" 且为无规律英文字母 → 疑似人机
+           - 其他情况标注"身份未知"，不要猜
 
         【容错】
         - 小地图上可能没有敌方舰船（开局对面未点亮）：此时威胁与策略基于阵容和参数推断，不要编造敌方位置。
@@ -576,10 +586,10 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         - 若阵容图里某些信息看不清，按能看清的部分判断，不要瞎编。
 
         【输出】直接给以下四部分，中文，分点，简洁。可引用具体数值（如"隐蔽5.8km""主炮射程18km"）但不要整段抄参数，不要废话套话：
-        1.【怎么玩这艘船】针对用户战舰，结合其参数特性给出本局打法要点：接敌距离、走位思路、消耗品时机、应避免的对抗。
+        1.【怎么玩这艘船】针对用户战舰，结合其参数特性给出本局打法要点：接敌距离、走位思路、应避免的对抗。注意：不要提任何消耗品（知识库无此数据），改用基于舰船参数的描述。
         2.【敌方威胁评估】
-           - 先点明敌方有几艘是人机、几艘是真人（依据玩家名冒号）。
-           - 对真人玩家，结合其玩家名与舰船判断谁最凶、最可能带节奏，说明理由。
+           - 先点明敌方有几艘是人机、几艘是真人（依据提供的玩家威胁评估清单）。
+           - 对真人玩家，结合其战绩（PR/胜率/场均伤害）与所驾舰船判断谁最凶、最可能带节奏，说明理由。
            - 结合舰船性能（主炮口径/射程/隐蔽/鱼雷/机动/防空）说明每个重点目标的威胁点。
         3.【优先攻击目标】明确给出本局建议优先处理的目标（具体舰船+是否真人），一句话理由+克制手段。
         4.【整局局势与策略】结合小地图双方位置分布（若有红色敌舰）给出整体走向与关键决策（推进/转场/控点/视野/集火）。若敌方未点亮，给出开局预案。
@@ -590,16 +600,39 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
     private const string RecognitionSystemPrompt =
         """
         你是《战舰世界》(World of Warships) 的图像识别助手。用户会提供一张游戏开局读秒阶段的双方阵容面板截图。
-        阵容面板包含两方所有舰船的名称。
+        阵容面板中每一行包含"玩家名"和其驾驶的"舰船名"两部分，你的任务是把它们分别提取出来组成配对。
 
-        识别要求：
-        1. 提取图中出现的每一艘战舰的名称（游戏内显示的舰船名，如"大和""蒙大拿""Z-52"等）。
-        2. 不要区分敌我/左右阵营，只返回一个扁平的舰船名列表。阵营判断由后续分析阶段另行处理。
-        3. 同名舰船若出现多次（双方都有同型舰），按出现次数重复列出。
-        4. 若某项识别不确定，宁可省略也不要编造。
+        【什么是舰船名，什么是玩家名——必须分清】
+        - 舰船名（填到 ship 字段）：游戏内显示的战舰型号名称，由"罗马数字等级前缀 + 空格 + 舰船型号名"组成。
+          你必须完整保留等级前缀，格式为"等级+空格+舰船名"，因为同名的舰船可能存在于不同等级（如"无畏"既有IX级也有III级），
+          等级前缀是区分重名舰船的关键信息。
+          · 正确示例：图上显示 "VII 沙恩霍斯特" → ship 字段填 "VII 沙恩霍斯特"
+          · 正确示例：图上显示 "X 大和" → ship 字段填 "X 大和"
+          · 正确示例：图上显示 "VIII 蒙大拿" → ship 字段填 "VIII 蒙大拿"
+          · 错误示例：ship 字段只填 "沙恩霍斯特"（丢失了等级前缀，重名时无法区分）
+        - 玩家名（填到 player 字段）：玩家账号昵称，常见形式有：
+          · 带 [军团] 标签的真人玩家，如 "[北洋狮]xxx" —— 方括号内的"北洋狮"是军团名，方括号外的"xxx"是玩家昵称，两者合起来才是完整玩家名，必须整体填入 player 字段，不可拆分、不可丢弃方括号部分
+          · 不带军团标签的真人玩家昵称（中文或英文），包括 "用户_123456" 这种默认昵称（注册账号未改名的真人玩家，是真人不是人机）
+          · 人机玩家的名字通常带冒号 ":" 且为无规律英文字母（如 ":AI:xxx"）—— 冒号原样保留在 player 字段里
+
+        【识别要求】
+        1. 每行提取玩家名和舰船名组成配对。ship 字段必须包含等级前缀，格式为"罗马数字+空格+舰船名"。
+        2. 玩家名要尽量完整准确——后续会用它联网查询玩家战绩，错一个字就查不到，宁可照搬图上原文也不要改写。
+        3. [军团] 标签是玩家名的一部分，必须包含在 player 字段里。
+        4. 玩家名中的冒号 ":" 原样保留（后续代码会用它做人机判定的辅助信号）。
+        5. 不要区分敌我/左右阵营，阵营判断由后续阶段处理。
+        6. 同名舰船若出现多次（双方都有同型舰），按出现次数重复列出，各自对应其玩家名。
+        7. 若某行看不清，宁可省略也不要编造。
+
+        【绝对禁止】
+        - ship 字段必须包含等级前缀，不可省略（这是区分重名舰船的关键）
+        - 不要把玩家名（含 [军团] 标签、冒号、用户_数字 等）当成舰船名填到 ship 字段
+        - 不要把舰船名当成玩家名填到 player 字段
+        - 不要丢掉玩家名中的 [军团] 标签
+        - 不要给玩家名加游戏中不存在的字符
 
         严格只输出如下 JSON，不要任何额外文字、不要 Markdown 代码块标记：
-        {"ships":["舰船名1","舰船名2","舰船名3"]}
+        {"pairs":[{"player":"玩家名1","ship":"VII 舰船名1"},{"player":"玩家名2","ship":"X 舰船名2"}]}
         """;
 
     /// <summary>构造用户提示词(与基类一致)。</summary>
@@ -614,14 +647,17 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         sb.AppendLine($"【我的战舰】{req.MyShip}");
         sb.AppendLine($"【本局所有舰船】{req.AllShips}（含重复=双方同型舰）");
         sb.AppendLine();
+        if (!string.IsNullOrWhiteSpace(req.PlayerThreatText))
+            sb.AppendLine(req.PlayerThreatText);
+        sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(req.KnowledgeBaseText))
             sb.AppendLine(req.KnowledgeBaseText);
         sb.AppendLine();
-        sb.AppendLine("按系统提示的四部分输出，不要复述参数。");
+        sb.AppendLine("按系统提示的四部分输出，不要复述参数。威胁评估以上方玩家战绩清单为准。");
         return sb.ToString();
     }
 
-    /// <summary>从 AI 返回文本中提取 ships JSON 扁平列表(复用基类逻辑)。</summary>
+    /// <summary>从 AI 返回文本中提取配对列表(优先)或扁平舰船名列表(兼容)。</summary>
     private static void ParseLineupJson(string content, ShipRecognitionResult result)
     {
         var text = content.Trim();
@@ -636,8 +672,26 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         try
         {
             var node = JsonNode.Parse(text);
-            if (node?["ships"] is JsonArray arr)
+
+            // 优先解析配对结构
+            if (node?["pairs"] is JsonArray pairs)
+            {
+                foreach (var p in pairs)
+                {
+                    if (p is not JsonObject po) continue;
+                    var player = po["player"]?.ToString()?.Trim() ?? "";
+                    var ship = po["ship"]?.ToString()?.Trim() ?? "";
+                    if (string.IsNullOrEmpty(ship)) continue;
+                    result.PlayerShipPairs.Add(new PlayerShipPair { Player = player, Ship = ship });
+                    result.Ships.Add(ship);
+                }
+            }
+
+            // 兼容旧格式：ships 扁平列表
+            if (result.Ships.Count == 0 && node?["ships"] is JsonArray arr)
+            {
                 result.Ships = arr.Select(x => x?.ToString()?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!).ToList();
+            }
 
             result.Success = result.Ships.Count > 0;
             if (!result.Success)

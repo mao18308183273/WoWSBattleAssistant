@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows;
 using System.Windows.Input;
@@ -529,6 +530,7 @@ public partial class MainWindow : Window
     /// 不去重——双方同型舰会出现两次，保留以反映真实阵容（知识库构建时会自行去重参数）。
     /// 带长度校验：若匹配靠"包含"且长度差过大，视为用户名误匹配而剔除
     /// （例如用户名"YamatoFan"碰巧包含船名"Yamato"，会被排除）。
+    /// 保留等级前缀（如"VII 沙恩霍斯特"）以区分重名舰船。
     /// </summary>
     private List<string> FilterToKnownShips(List<string> recognized, out int dropped)
     {
@@ -539,9 +541,17 @@ public partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(raw)) { dropped++; continue; }
             var ship = _database.TryGetShip(raw);
             if (ship == null) { dropped++; continue; }
-            var canonical = ship["name"]?.ToString()?.Trim() ?? raw.Trim();
-            // 长度差过大说明是"包含"误匹配（用户名夹带了船名），剔除
-            if (Math.Abs(canonical.Length - raw.Trim().Length) > 2) { dropped++; continue; }
+            var name = ship["name"]?.ToString()?.Trim() ?? raw.Trim();
+            var vlevel = ship["vlevel"]?.ToString()?.Trim() ?? "";
+
+            // 归一化：如果原始输入带等级前缀，保留"vlevel name"格式以区分重名舰船
+            var canonical = !string.IsNullOrEmpty(vlevel) && raw.Trim().StartsWith(vlevel, StringComparison.OrdinalIgnoreCase)
+                ? $"{vlevel} {name}"
+                : name;
+
+            // 长度差校验：去掉等级前缀后比较，防止"包含"误匹配
+            var rawPure = Regex.Replace(raw.Trim(), @"^[IVXLCDM]+\s+", "");
+            if (Math.Abs(name.Length - rawPure.Length) > 2) { dropped++; continue; }
             result.Add(canonical); // 保留重复（双方同型舰）
         }
         return result;
