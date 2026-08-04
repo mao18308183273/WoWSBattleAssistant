@@ -37,6 +37,7 @@
                         <PasswordBox x:Name="PbDeepSeekToken" Margin="0,0,0,6"/>
                         <TextBlock Text="DeepSeek Cookie（整行）" Margin="0,4,0,4" FontSize="12"/>
                         <TextBox x:Name="TxtDeepSeekCookie" Margin="0,0,0,6" AcceptsReturn="True" TextWrapping="Wrap" Height="50" VerticalScrollBarVisibility="Auto" FontSize="11"/>
+                        <CheckBox x:Name="ChkDsThinking" Content="启用思考模式（显示思考过程，但等待时间更长）" Margin="0,2,0,2" FontSize="11" Foreground="Gray"/>
                         <TextBlock Text="获取方式：浏览器登录 chat.deepseek.com → F12 → Network → 点任意 api/v0 请求 → Headers → 复制 authorization(去 Bearer ) 与 cookie 整行。Token 过期需重新复制。本功能依赖本机 Node.js（用于 PoW 求解）。" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
@@ -57,9 +58,27 @@
                         <TextBlock x:Name="TxtShipCount" Text="" FontSize="11" Foreground="Gray" Margin="0,4,0,0"/>
                         <Button x:Name="BtnReload" Content="重新加载知识库" Padding="12,4" Margin="0,8,0,0" HorizontalAlignment="Left" Click="BtnReload_Click"/>
 
-                        <TextBlock Text="游戏服务器（用于玩家战绩查询）" Margin="0,12,0,4" FontSize="12"/>
+                        <TextBlock Text="游戏目录（用于自动检测阵容）" Margin="0,12,0,4" FontSize="12"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="TxtGamePath" Grid.Column="0" Margin="0,0,6,0"/>
+                            <Button x:Name="BtnBrowseGame" Grid.Column="1" Content="自动检测" Padding="12,4" Click="BtnBrowseGame_Click" Margin="0,0,4,0"/>
+                            <Button x:Name="BtnVerifyGame" Grid.Column="2" Content="验证" Padding="12,4" Click="BtnVerifyGame_Click"/>
+                        </Grid>
+                        <TextBlock x:Name="TxtGamePathStatus" Text="" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        <TextBlock Text="填入游戏根目录（如 C:\Games\World_of_Warships_CN），程序自动读取 replays 文件夹中的对局数据。" FontSize="11" Foreground="Gray" TextWrapping="Wrap" Margin="0,4,0,0"/>
+
+                        <TextBlock Text="战绩查询 API" Margin="0,12,0,4" FontSize="12"/>
+                        <ComboBox x:Name="CbApiBackend" Margin="0,0,0,6"/>
+                        <TextBlock Text="Shinoaki(默认)=wows.mgaia.top 后端；WG Public=官方API；Vortex=第三方支持全服。国服推荐Shinoaki。" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+
+                        <TextBlock Text="游戏服务器" Margin="0,12,0,4" FontSize="12"/>
                         <ComboBox x:Name="CbServer" Margin="0,0,0,6"/>
-                        <TextBlock Text="用于在 wows.mgaia.top 后端查询玩家战绩以评估威胁。国服选 cn。" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                        <TextBlock Text="用于战绩查询。选 cn(国服)。自动检测模式下会从游戏日志自动识别。" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
 
@@ -69,7 +88,7 @@
                         <TextBlock Text="小地图区域" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
                         <TextBlock x:Name="TxtRegion" Text="未设置" FontSize="12" Foreground="Gray" Margin="0,0,0,8"/>
                         <Button x:Name="BtnSelectRegion" Content="框选小地图位置" Padding="12,4" HorizontalAlignment="Left" Click="BtnSelectRegion_Click"/>
-                        <TextBlock Text="提示：点击后进入全屏框选模式，按住鼠标左键拖动框选游戏小地图区域。" FontSize="11" Foreground="Gray" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                        <TextBlock Text="提示：框选一次后自动保存，回到主界面即可一键截取，无需重复框选。" FontSize="11" Foreground="Gray" Margin="0,6,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
 
@@ -79,6 +98,29 @@
                         <TextBlock Text="自定义系统提示词（可选，留空用默认）" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
                         <TextBox x:Name="TxtSystemPrompt" AcceptsReturn="True" TextWrapping="Wrap" Height="100"
                                  VerticalScrollBarVisibility="Auto" FontSize="12"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 日志 -->
+                <Border Background="White" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="运行日志" FontWeight="Bold" FontSize="14" VerticalAlignment="Center"/>
+                            <Button x:Name="BtnExportLog" Grid.Column="1" Content="导出日志" Padding="10,3" Margin="8,0,4,0"
+                                    Click="BtnExportLog_Click"/>
+                            <Button x:Name="BtnClearLog" Grid.Column="2" Content="清空" Padding="10,3"
+                                    Click="BtnClearLog_Click"/>
+                        </Grid>
+                        <TextBox x:Name="TxtLogViewer" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                                 Height="120" VerticalScrollBarVisibility="Auto" FontSize="10"
+                                 FontFamily="Consolas" Background="#FFF5F5F5" Margin="0,6,0,0"/>
+                        <Button x:Name="BtnRefreshLog" Content="刷新日志" Padding="10,3" Margin="0,6,0,0"
+                                HorizontalAlignment="Left" Click="BtnRefreshLog_Click"/>
                     </StackPanel>
                 </Border>
 

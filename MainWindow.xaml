@@ -14,21 +14,17 @@
         PreviewKeyDown="Window_PreviewKeyDown">
 
     <Window.Resources>
-        <!-- 按钮不可获焦、不参与 Tab 导航，避免按住 TAB 时焦点在按钮间乱跳 -->
         <Style TargetType="Button">
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="IsTabStop" Value="False"/>
         </Style>
-        <!-- 文本框/下拉只屏蔽 Tab 导航，仍可用鼠标点击获焦输入 -->
         <Style TargetType="TextBox">
             <Setter Property="IsTabStop" Value="False"/>
         </Style>
         <Style TargetType="ComboBox">
             <Setter Property="IsTabStop" Value="False"/>
         </Style>
-        <!-- 覆盖系统窗口色：让下拉面板(Popup)容器为深色，而非默认白色 -->
         <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FF13141F"/>
-        <!-- 下拉项样式：深色背景 + 白字，悬停/选中加深，彻底解决"白字浅底看不清" -->
         <Style TargetType="ComboBoxItem">
             <Setter Property="Background" Value="#FF1A1B2E"/>
             <Setter Property="Foreground" Value="White"/>
@@ -53,6 +49,32 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- 模式切换按钮样式 -->
+        <Style x:Key="ModeToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="#FF3A3B55"/>
+            <Setter Property="Foreground" Value="#FFBDBDBD"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="4" Padding="14,3"
+                                BorderThickness="0">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter Property="Background" Value="#FF4FC3F7"/>
+                                <Setter Property="Foreground" Value="Black"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#FF555577"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Border x:Name="RootBorder" Background="#EE1A1B2E" CornerRadius="10" BorderBrush="#FF4FC3F7" BorderThickness="1">
@@ -63,10 +85,11 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <!-- 标题栏（可拖动）-->
+            <!-- 标题栏 -->
             <Border Grid.Row="0" Background="#FF2D2E44" CornerRadius="10,10,0,0" Padding="12,8"
                     MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <Grid>
@@ -82,6 +105,9 @@
                         <Button x:Name="BtnCollapse" Content="▲" FontSize="12" Width="32" Height="28"
                                 Background="Transparent" Foreground="White" BorderThickness="0"
                                 Click="BtnCollapse_Click" ToolTip="折叠/展开详情"/>
+                        <Button x:Name="BtnCompact" Content="🗜" FontSize="12" Width="32" Height="28"
+                                Background="Transparent" Foreground="White" BorderThickness="0"
+                                Click="BtnCompact_Click" ToolTip="精简模式/完整模式"/>
                         <Button x:Name="BtnSettings" Content="⚙" FontSize="16" Width="32" Height="28"
                                 Background="Transparent" Foreground="White" BorderThickness="0"
                                 Click="BtnSettings_Click" ToolTip="设置"/>
@@ -95,20 +121,48 @@
                 </Grid>
             </Border>
 
+            <!-- 模式切换栏 -->
+            <Border x:Name="ModeBar" Grid.Row="1" Background="#FF232436" Padding="8,4">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <ToggleButton x:Name="TglAuto" Content="自动" Margin="0,0,4,0"
+                                      Style="{StaticResource ModeToggleStyle}" Click="TglAuto_Click"/>
+                        <ToggleButton x:Name="TglManual" Content="手动"
+                                      Style="{StaticResource ModeToggleStyle}" Click="TglManual_Click"/>
+                    </StackPanel>
+                    <TextBlock x:Name="TxtModeHint" Grid.Column="1" Text=""
+                               Foreground="#FF8888" FontSize="10" VerticalAlignment="Center"
+                               TextWrapping="Wrap" TextAlignment="Right"/>
+                </Grid>
+            </Border>
+
             <!-- 主体 -->
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="12">
-                <StackPanel>
+            <Grid Grid.Row="2" Margin="12,4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-                    <!-- 状态条 -->
-                    <Border x:Name="StatusBar" Background="#FF13141F" BorderBrush="#FF3A3B55" BorderThickness="1" CornerRadius="4" Padding="8,4" Margin="0,4,0,8">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock x:Name="TxtModel" Text="模型: 未配置" Foreground="#FF4FC3F7" FontSize="11" Margin="0,0,12,0"/>
-                            <TextBlock x:Name="TxtStatus" Text="就绪" Foreground="#FFBDBDBD" FontSize="11" TextWrapping="Wrap"/>
-                        </StackPanel>
-                    </Border>
+                <!-- 状态条 -->
+                <Border x:Name="StatusBar" Grid.Row="0" Background="#FF13141F" BorderBrush="#FF3A3B55" BorderThickness="1"
+                        CornerRadius="4" Padding="6,3" Margin="0,0,0,6">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="TxtModel" Text="模型: 未配置" Foreground="#FF4FC3F7" FontSize="10" Margin="0,0,10,0"/>
+                        <TextBlock x:Name="TxtStatus" Text="就绪" Foreground="#FFBDBDBD" FontSize="10" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
 
-                    <!-- ============ 步骤① 截阵容 ============ -->
-                    <Border Background="#224FC3F7" BorderBrush="#FF4FC3F7" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,8">
+                    <!-- ============ 步骤① 阵容 ============ -->
+                    <Border x:Name="LineupCard" Grid.Row="1" Background="#224FC3F7" BorderBrush="#FF4FC3F7"
+                            BorderThickness="1" CornerRadius="4" Padding="6" Margin="0,0,0,6">
                         <StackPanel>
                             <Grid Margin="0,0,0,6">
                                 <Grid.ColumnDefinitions>
@@ -116,34 +170,39 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="①" Foreground="#FF4FC3F7" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <TextBlock Grid.Column="1" Text="截双方阵容（读秒阶段）" Foreground="White" FontSize="13" FontWeight="Bold" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TxtLineupTitle" Text="双方阵容" Foreground="White" FontSize="13" FontWeight="Bold" VerticalAlignment="Center"/>
                             </Grid>
 
-                            <!-- 按钮：常驻可见 -->
-                            <Button x:Name="BtnCaptureLineup" Content="📷 截取双方阵容"
-                                    Padding="0,8" Margin="0,0,0,6" FontSize="13" FontWeight="Bold"
-                                    Background="#FF4FC3F7" Foreground="Black" Click="BtnCaptureLineup_Click"/>
+                            <!-- 自动模式：状态提示 -->
+                            <Border x:Name="AutoLineupPanel" Background="#222FC3F7" CornerRadius="3" Padding="6,4" Margin="0,0,0,4">
+                                <TextBlock x:Name="TxtAutoStatus" Text="未配置游戏目录，请点⚙设置" Foreground="#FF4FC3F7" FontSize="11" TextWrapping="Wrap"/>
+                            </Border>
 
-                            <!-- 详情：可折叠 -->
+                            <!-- 手动模式：截图按钮（自动模式时隐藏） -->
+                            <Button x:Name="BtnCaptureLineup" Content="📷 框选截取阵容"
+                                    Padding="0,8" Margin="0,0,0,6" FontSize="13" FontWeight="Bold"
+                                    Background="#FF4FC3F7" Foreground="Black" Click="BtnCaptureLineup_Click"
+                                    Visibility="Collapsed"/>
+
+                            <!-- 详情 -->
                             <StackPanel x:Name="Step1Details">
                                 <Grid Margin="0,0,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" x:Name="TxtLineupStatus" Text="未截取" Foreground="#FFBDBDBD" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="0" x:Name="TxtLineupStatus" Text="未获取" Foreground="#FFBDBDBD" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                     <Border Grid.Column="1" Background="#FF13141F" BorderBrush="#FF3A3B55" BorderThickness="1"
                                             Width="80" Height="56">
                                         <Grid>
                                             <Image x:Name="ImgLineupPreview" Stretch="Uniform"/>
-                                            <TextBlock x:Name="TxtLineupPlaceholder" Text="阵容预览" Foreground="#FF6666" FontSize="9"
+                                            <TextBlock x:Name="TxtLineupPlaceholder" Text="预览" Foreground="#FF6666" FontSize="9"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Grid>
                                     </Border>
                                 </Grid>
 
-                                <!-- 指定我的战舰 -->
-                                <TextBlock Text="▼ 从我方舰船中指定你的战舰（识别后出现）" Foreground="#FFBDBDBD" FontSize="11" Margin="0,4,0,2"/>
+                                <TextBlock Text="▼ 我的战舰（可编辑修正）" Foreground="#FFBDBDBD" FontSize="11" Margin="0,4,0,2"/>
                                 <Grid Margin="0,0,0,4">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
@@ -155,23 +214,23 @@
                                             Background="#FF3A3B55" Foreground="White" Click="BtnMoveToMy_Click" ToolTip="把下拉选中的舰船设为我的战舰"/>
                                 </Grid>
 
-                                <TextBlock Text="我的战舰（可编辑修正）" Foreground="#FFBDBDBD" FontSize="12" Margin="0,4,0,2"/>
                                 <TextBox x:Name="TxtMyShip" Background="#FF13141F" Foreground="White"
                                          BorderBrush="#FF3A3B55" Padding="6,4" Margin="0,0,0,6"
-                                         TextChanged="TxtInput_TextChanged"/>
-
-                                <TextBlock Text="本局所有舰船（扁平列表，不分敌我；可编辑修正）" Foreground="#FFBDBDBD" FontSize="12" Margin="0,0,0,2"/>
+                                         TextChanged="TxtInput_TextChanged"
+                                         ToolTip="你的战舰名"/>
+                                <TextBlock Text="本局所有舰船（可分号/逗号分隔，可手动修正）" Foreground="#FFBDBDBD" FontSize="11" Margin="0,0,0,2"/>
                                 <TextBox x:Name="TxtAllShips" Background="#FF13141F" Foreground="White"
                                          BorderBrush="#FF3A3B55" Padding="6,4" Margin="0,0,0,4"
-                                         AcceptsReturn="True" TextWrapping="Wrap" Height="64"
+                                         AcceptsReturn="True" TextWrapping="Wrap" Height="52"
                                          VerticalScrollBarVisibility="Auto"
                                          TextChanged="TxtInput_TextChanged"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>
 
-                    <!-- ============ 步骤② 截小地图 ============ -->
-                    <Border Background="#22FFB74D" BorderBrush="#FFffb74D" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,8">
+                    <!-- ============ 步骤② 小地图 ============ -->
+                    <Border x:Name="MinimapCard" Grid.Row="2" Background="#22FFB74D" BorderBrush="#FFffb74D"
+                            BorderThickness="1" CornerRadius="4" Padding="6" Margin="0,0,0,6">
                         <StackPanel>
                             <Grid Margin="0,0,0,6">
                                 <Grid.ColumnDefinitions>
@@ -179,15 +238,17 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="②" Foreground="#FFffb74D" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <TextBlock Grid.Column="1" Text="截小地图（战斗开始后）" Foreground="White" FontSize="13" FontWeight="Bold" VerticalAlignment="Center"/>
+                                <TextBlock Text="小地图（战斗开始后）" Foreground="White" FontSize="13" FontWeight="Bold" VerticalAlignment="Center"/>
                             </Grid>
 
-                            <!-- 按钮：常驻可见 -->
+                            <!-- 截取按钮（始终手动触发） -->
                             <Button x:Name="BtnCaptureMinimap" Content="🗺️ 截取小地图"
-                                    Padding="0,8" Margin="0,0,0,6" FontSize="13" FontWeight="Bold"
+                                    Padding="0,8" Margin="0,0,0,4" FontSize="13" FontWeight="Bold"
                                     Background="#FFffb74D" Foreground="Black" Click="BtnCaptureMinimap_Click"/>
+                            <TextBlock x:Name="TxtMinimapHint" Text="请在⚙设置中先框选小地图位置，之后每次点击此按钮即可截取"
+                                       Foreground="#FFBDBDBD" FontSize="10" Margin="0,0,0,6" TextWrapping="Wrap"/>
 
-                            <!-- 详情：可折叠 -->
+                            <!-- 详情 -->
                             <StackPanel x:Name="Step2Details">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -199,7 +260,7 @@
                                             Width="80" Height="56">
                                         <Grid>
                                             <Image x:Name="ImgMinimapPreview" Stretch="Uniform"/>
-                                            <TextBlock x:Name="TxtMinimapPlaceholder" Text="小地图预览" Foreground="#FF6666" FontSize="9"
+                                            <TextBlock x:Name="TxtMinimapPlaceholder" Text="预览" Foreground="#FF6666" FontSize="9"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Grid>
                                     </Border>
@@ -209,34 +270,42 @@
                     </Border>
 
                     <!-- ============ 步骤③ 分析 ============ -->
-                    <Grid Margin="0,4,0,8">
+                    <Grid Grid.Row="3" Margin="0,2,0,4">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <Button x:Name="BtnAnalyze" Grid.Column="0" Content="🔍 分析战局"
-                                Padding="0,12" Margin="0,0,6,0" FontSize="14" FontWeight="Bold"
+                                Padding="0,10" Margin="0,0,6,0" FontSize="13" FontWeight="Bold"
                                 Background="#FF66BB6A" Foreground="Black" Click="BtnAnalyze_Click" IsEnabled="False"/>
-                        <Button x:Name="BtnClear" Grid.Column="1" Content="清空" Padding="12,12"
+                        <Button x:Name="BtnClear" Grid.Column="1" Content="清空" Padding="10,10"
                                 Background="#FF3A3B55" Foreground="White" Click="BtnClear_Click"/>
                     </Grid>
 
-                    <!-- 结果区 -->
-                    <DockPanel Margin="0,4,0,4">
-                        <TextBlock Text="分析结果" Foreground="White" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
-                        <Button x:Name="BtnCopy" Content="复制" DockPanel.Dock="Right" Padding="10,2"
-                                Background="#FF3A3B55" Foreground="White" Click="BtnCopy_Click" Margin="8,0,0,0"/>
-                    </DockPanel>
-                    <Border Background="#FF13141F" BorderBrush="#FF3A3B55" BorderThickness="1" Height="220">
-                        <TextBox x:Name="TxtResult" Background="Transparent" Foreground="#FFE0E0E0"
-                                 BorderThickness="0" Padding="8" IsReadOnly="True"
-                                 TextWrapping="Wrap" AcceptsReturn="True"
-                                 VerticalScrollBarVisibility="Auto"
-                                 Text="等待分析..."/>
-                    </Border>
-                    <TextBlock x:Name="TxtFooter" Text="" Foreground="#FF6666" FontSize="10" Margin="0,4,0,8" TextWrapping="Wrap"/>
-                </StackPanel>
-            </ScrollViewer>
-        </Grid>
-    </Border>
+                    <!-- 结果区标题 -->
+                    <Grid Grid.Row="4">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Grid.Row="0" Margin="0,0,0,4">
+                            <TextBlock Text="分析结果" Foreground="White" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
+                            <Button x:Name="BtnCopy" Content="复制" DockPanel.Dock="Right" Padding="8,2"
+                                    Background="#FF3A3B55" Foreground="White" Click="BtnCopy_Click" Margin="8,0,0,0"/>
+                        </DockPanel>
+                        <Border Grid.Row="1" Background="#FF13141F" BorderBrush="#FF3A3B55" BorderThickness="1">
+                            <RichTextBox x:Name="TxtResult" Background="Transparent" Foreground="#FFE0E0E0"
+                                         BorderThickness="0" Padding="6" IsReadOnly="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         IsDocumentEnabled="True">
+                                <FlowDocument PagePadding="0" FontFamily="Microsoft YaHei" FontSize="11"
+                                              LineHeight="20"/>
+                            </RichTextBox>
+                        </Border>
+                    </Grid>
+
+                    <TextBlock x:Name="TxtFooter" Grid.Row="5" Text="" Foreground="#FF6666" FontSize="9" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                </Grid>
+            </Grid>
+        </Border>
 </Window>

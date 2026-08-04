@@ -11,7 +11,8 @@ public static class AIAnalyzerFactory
         {
             AiProvider.Glm => new GlmBattleAnalyzer(settings.GlmApiKey, settings.GlmModel),
             AiProvider.Qwen => new QwenVlBattleAnalyzer(settings.QwenApiKey, settings.QwenModel),
-            AiProvider.DeepSeek => new DeepSeek.DeepSeekVisionAnalyzer(settings.DeepSeekToken, settings.DeepSeekCookie),
+            AiProvider.DeepSeek => new DeepSeek.DeepSeekVisionAnalyzer(
+                settings.DeepSeekToken, settings.DeepSeekCookie, settings.EnableDeepSeekThinking),
             _ => throw new ArgumentOutOfRangeException(nameof(settings.AiProvider))
         };
     }

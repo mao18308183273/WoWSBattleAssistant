@@ -73,12 +73,13 @@ public sealed class ShinoakiApiClient
     /// 失败时返回的 PlayerThreatInfo.HasError=true，不抛异常。
     /// </summary>
     public static async Task<PlayerThreatInfo> GetPlayerInfoAsync(long accountId, string server,
-        string userName, string shipName, bool hasColon, CancellationToken ct = default)
+        string userName, string shipName, int relation, bool hasColon, CancellationToken ct = default)
     {
         var info = new PlayerThreatInfo
         {
             UserName = userName,
             ShipName = shipName,
+            Relation = relation,
             SearchHit = true,
             HasColon = hasColon,
             AccountId = accountId
@@ -193,6 +194,9 @@ public sealed class ShinoakiApiClient
         var name = pair.Player?.Trim() ?? "";
         var ship = pair.Ship?.Trim() ?? "";
         var hasColon = name.Contains(':');
+        var relation = pair.Relation;
+
+        AppLog.Info($"shinoaki 查询: [{relation switch { 0 => "自己", 1 => "队友", 2 => "敌方", _ => "?" }}] {name} ({ship})");
 
         // 只查询、不判定。搜索结果和冒号特征都交给 AI 综合判断。
         var accountId = await SearchPlayerAsync(name, server, ct).ConfigureAwait(false);
@@ -203,12 +207,13 @@ public sealed class ShinoakiApiClient
             {
                 UserName = name,
                 ShipName = ship,
+                Relation = relation,
                 SearchHit = false,
                 HasColon = hasColon
             };
         }
 
         // 搜索命中 → 查战绩
-        return await GetPlayerInfoAsync(accountId.Value, server, name, ship, hasColon, ct).ConfigureAwait(false);
+        return await GetPlayerInfoAsync(accountId.Value, server, name, ship, relation, hasColon, ct).ConfigureAwait(false);
     }
 }

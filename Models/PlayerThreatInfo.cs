@@ -4,19 +4,22 @@ namespace WoWSBattleAssistant.Models;
 
 /// <summary>
 /// 单个玩家的威胁评估信息。
-/// 来源：阵容识别（玩家名+舰船名）→ shinoaki 搜索（提供搜索结果供 AI 判断）→ user/info（提取战绩）。
-/// 注意：本类不做人机判定，只提供原始数据（搜索是否命中、是否含冒号、战绩），
-/// 最终真人/人机判断由 AI 综合三条规则完成。
+/// 来源：tempArenaInfo.json 自动解析（玩家名/shipId/阵营）→ shinoaki/WG API 战绩查询。
+/// 玩家名与舰船名由本地文件解析（100%准确），不再依赖 AI 视觉识别。
+/// 最终真人/人机判断由 AI 综合规则完成。
 /// </summary>
 public sealed class PlayerThreatInfo
 {
-    /// <summary>玩家名（阵容图中识别到的原名）</summary>
+    /// <summary>玩家名（来自 tempArenaInfo.json，含 [军团] 标签）</summary>
     public string UserName { get; set; } = string.Empty;
 
-    /// <summary>该玩家所驾驶的舰船名</summary>
+    /// <summary>该玩家所驾驶的舰船名（中文，来自本地知识库 shipId 映射）</summary>
     public string ShipName { get; set; } = string.Empty;
 
-    /// <summary>shinoaki 搜索是否命中（true=搜到, false=未搜到, null=查询出错）</summary>
+    /// <summary>阵营: 0=自己, 1=队友, 2=敌方</summary>
+    public int Relation { get; set; }
+
+    /// <summary>shinoaki/WG 搜索是否命中（true=搜到, false=未搜到, null=查询出错）</summary>
     public bool? SearchHit { get; set; }
 
     /// <summary>玩家名是否含冒号":"（人机特征之一）</summary>
@@ -43,26 +46,29 @@ public sealed class PlayerThreatInfo
     public string ToAiLine()
     {
         var colonTag = HasColon ? "名字含冒号" : "名字不含冒号";
+        var sideTag = Relation switch { 0 => "自己", 1 => "队友", 2 => "敌方", _ => "未知" };
 
         if (HasError)
-            return $"  - {UserName}（{ShipName}）: shinoaki查询失败（{ErrorMessage}），{colonTag}";
+            return $"  - [{sideTag}] {UserName}（{ShipName}）: 战绩查询失败（{ErrorMessage}），{colonTag}";
 
         if (SearchHit == true)
         {
-            return $"  - {UserName}（{ShipName}）: shinoaki搜索命中，PR {PrValue}({PrName})，" +
+            return $"  - [{sideTag}] {UserName}（{ShipName}）: 战绩搜索命中，PR {PrValue}({PrName})，" +
                    $"{Battles}场，胜率{WinRate:0.0}%，场均伤害{AvgDamage}，场均击杀{AvgFrags:0.0}，KD{Kd:0.00}，{colonTag}";
         }
 
         if (SearchHit == false)
-            return $"  - {UserName}（{ShipName}）: shinoaki搜索未命中，{colonTag}";
+            return $"  - [{sideTag}] {UserName}（{ShipName}）: 战绩搜索未命中，{colonTag}";
 
-        return $"  - {UserName}（{ShipName}）: shinoaki未查询，{colonTag}";
+        return $"  - [{sideTag}] {UserName}（{ShipName}）: 战绩未查询，{colonTag}";
     }
 }
 
-/// <summary>阵容识别的"玩家名+舰船名"配对</summary>
+/// <summary>阵容中的"玩家名+舰船名+阵营"配对（来自 tempArenaInfo.json 自动解析）</summary>
 public sealed class PlayerShipPair
 {
     public string Player { get; set; } = string.Empty;
     public string Ship { get; set; } = string.Empty;
+    /// <summary>阵营: 0=自己, 1=队友, 2=敌方</summary>
+    public int Relation { get; set; }
 }

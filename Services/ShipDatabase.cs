@@ -23,6 +23,9 @@ public sealed class ShipDatabase
     /// <summary>小写船名 -> 原始船名（用于大小写不敏感匹配）</summary>
     private readonly Dictionary<string, string> _lowerToName = new();
 
+    /// <summary>shipId (游戏内数字ID) -> 船的 JsonNode（用于 tempArenaInfo.json 匹配）</summary>
+    private readonly Dictionary<long, JsonObject> _byShipId = new();
+
     private int _totalCount;
     private bool _loaded;
 
@@ -44,6 +47,7 @@ public sealed class ShipDatabase
         _byName.Clear();
         _byVlevelName.Clear();
         _lowerToName.Clear();
+        _byShipId.Clear();
         foreach (var item in arr)
         {
             if (item is not JsonObject obj) continue;
@@ -52,11 +56,16 @@ public sealed class ShipDatabase
             _byName[name] = obj;
             _lowerToName[name.ToLowerInvariant()] = name;
 
+            // 建立 shipId 索引（用于 tempArenaInfo.json 的 shipId 映射）
+            if (obj["ship_id"]?.GetValue<long>() is long sid && sid > 0)
+                _byShipId[sid] = obj;
+
             // 同时建立 "vlevel name" 索引（如 "VII 沙恩霍斯特"），用于区分重名舰船
             var vlevel = obj["vlevel"]?.ToString().Trim();
             if (!string.IsNullOrEmpty(vlevel))
                 _byVlevelName[$"{vlevel} {name}"] = obj;
         }
+        progress?.Report($"已加载 {_byName.Count} 艘战舰，{_byShipId.Count} 个 shipId 索引");
         _totalCount = _byName.Count;
         _loaded = true;
         progress?.Report($"已加载 {_totalCount} 艘战舰数据");
@@ -91,6 +100,38 @@ public sealed class ShipDatabase
         if (hit.Value != null) return _byName[hit.Value];
 
         return null;
+    }
+
+    /// <summary>按游戏内 shipId 查找舰船数据</summary>
+    public JsonObject? TryGetByShipId(long shipId)
+        => _byShipId.TryGetValue(shipId, out var obj) ? obj : null;
+
+    /// <summary>按游戏内 shipId 获取显示名称（"vlevel name" 格式，如 "X 大选帝侯"）。未命中返回 "未知舰船(shipId)"。</summary>
+    public string GetShipDisplayName(long shipId)
+    {
+        if (_byShipId.TryGetValue(shipId, out var obj))
+        {
+            var name = obj["name"]?.ToString()?.Trim() ?? "";
+            var vlevel = obj["vlevel"]?.ToString()?.Trim() ?? "";
+            return string.IsNullOrEmpty(vlevel) ? name : $"{vlevel} {name}";
+        }
+        return $"未知舰船({shipId})";
+    }
+
+    /// <summary>按游戏内 shipId 获取舰船等级(tier)。未命中返回 0。</summary>
+    public int GetShipTier(long shipId)
+    {
+        if (_byShipId.TryGetValue(shipId, out var obj))
+            return obj["tier"]?.GetValue<int>() ?? 0;
+        return 0;
+    }
+
+    /// <summary>按游戏内 shipId 获取舰船类型（战列舰/巡洋舰/驱逐舰/航母/潜艇）。未命中返回 "未知"。</summary>
+    public string GetShipType(long shipId)
+    {
+        if (_byShipId.TryGetValue(shipId, out var obj))
+            return obj["vtype"]?.ToString() ?? "未知";
+        return "未知";
     }
 
     /// <summary>

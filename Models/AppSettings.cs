@@ -24,12 +24,27 @@ public sealed class AppSettings
     /// <summary>Cookie 整行(含 ds_session_id 等),从 F12 → Network → 请求头 cookie 复制。用于通过 WAF。</summary>
     public string DeepSeekCookie { get; set; } = string.Empty;
 
+    /// <summary>DeepSeek 思考模式（开启=显示思考链但更慢，关闭=仅回复文本更快）</summary>
+    public bool EnableDeepSeekThinking { get; set; } = true;
+
     /// <summary>战舰数据 JSON 文件路径（945 艘船知识库）</summary>
     public string ShipDataPath { get; set; } =
         @"C:\Users\mao_z\Downloads\wows_ships_data_20260801_125351.json";
 
     /// <summary>游戏服务器（用于 shinoaki 玩家战绩查询）。cn=国服, asia=亚服, eu=欧服, na=美服, ru=俄服</summary>
     public string Server { get; set; } = "cn";
+
+    /// <summary>游戏安装目录（用于自动读取 tempArenaInfo.json）。留空则自动从注册表检测。</summary>
+    public string GamePath { get; set; } = string.Empty;
+
+    /// <summary>是否启用阵容自动检测（读取 tempArenaInfo.json，跳过截图+AI识别步骤）</summary>
+    public bool AutoDetectLineup { get; set; } = true;
+
+    /// <summary>战绩查询 API 后端选择</summary>
+    public ApiBackend ApiBackend { get; set; } = ApiBackend.Shinoaki;
+
+    /// <summary>WG Public API 的 application_id（公开 ID，用于战绩查询）</summary>
+    public string WgApplicationId { get; set; } = "447ec579e994976e39dec0e7d0bac644";
 
     /// <summary>小地图在屏幕上的区域（设备像素坐标）</summary>
     public Rect MinimapRegion { get; set; } = Rect.Empty;
@@ -52,4 +67,13 @@ public enum AiProvider
     Glm,        // 智谱 GLM-4V / GLM-4V-Plus
     Qwen,       // 阿里通义千问 VL
     DeepSeek    // DeepSeek 网页版视觉(逆向,需登录态 Token+Cookie)
+}
+
+/// <summary>战绩查询 API 后端</summary>
+public enum ApiBackend
+{
+    Shinoaki,       // wows.mgaia.top 背后 shinoaki API（默认，当前使用）
+    WgPublic,       // WG Public API（官方，不支持 RU/CN）
+    Vortex,         // Vortex API（第三方，支持所有区服）
+    WgPublicYuyuko  // WG Public API 经 Yuyuko 中国代理
 }

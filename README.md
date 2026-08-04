@@ -1,18 +1,19 @@
 # WoWSBattleAssistant · 战舰世界实时战斗分析助手
 
-![version](https://img.shields.io/badge/version-2.0.0-16A085) ![license](https://img.shields.io/badge/license-personal-F39C12) ![dotnet](https://img.shields.io/badge/.NET-10-blue) ![platform](https://img.shields.io/badge/platform-Win10%2B11-lightgrey)
+![version](https://img.shields.io/badge/version-3.0.0-9B59B6) ![license](https://img.shields.io/badge/license-personal-F39C12) ![dotnet](https://img.shields.io/badge/.NET-10-blue) ![platform](https://img.shields.io/badge/platform-Win10%2B11-lightgrey)
 
-一个为《战舰世界》（World of Warships）做的实时战术分析悬浮窗工具。开局读秒阶段截一张阵容图、对局中截一张小地图，AI 结合双方舰船参数、**联网查询的玩家战绩**与小地图态势，给出本局的打法建议、威胁评估与优先目标。
+一个为《战舰世界》（World of Warships）做的实时战术分析悬浮窗工具。开局读秒阶段截一张阵容图、对局中截一张小地图，AI 结合双方舰船参数、**联网查询的玩家战绩**与小地图态势，给出本局的打法建议、威胁评估与优先目标。V3.0.0 起支持**自动读取游戏对局文件**，无需手动截阵容。
 
 ## 功能特性
 
 - **悬浮窗设计**：半透明置顶，不遮挡游戏；截图瞬间自动隐藏避免入镜，截完恢复。
 - **三步式流程**：截阵容 → AI 识别舰船名 → 截小地图 → AI 综合分析，操作直观。
+- **对局文件自动读取**（V3.0.0 新增）：监控游戏 `replays/tempArenaInfo.json`，对局加载时自动读取双方玩家名/shipId/阵营，**无需手动截阵容**。支持纯 JSON 与二进制包装两种格式（参考 ApeRadar 实现）。
 - **AI 视觉识别**（V2.0.0 重构）：自动识别阵容面板中的「玩家名 + 舰船名」配对，并用知识库过滤掉 AI 把玩家名误判成舰船名的情况。**分析阶段 AI 会自行从阵容图的「队友/敌方」标题判断敌我**，不再完全依赖前置识别结果，识别错误时 AI 能以阵容图为准自行纠正。
-- **玩家战绩联网查询**：识别完成后自动调用 [shinoaki](https://wows.mgaia.top) 公开 API：
-  - 按玩家名搜索判定**真人 / 人机**（搜到 = 真人；玩家名含冒号或搜不到 = 人机）。
-  - 真人玩家拉取战绩：PR 值与评级、总场数、胜率、场均伤害、场均击杀、KD。
-  - 战绩以紧凑文本注入 AI，让威胁评估基于真实数据而非「看名字风格」。
+- **双战绩数据源**（V3.0.0 新增）：
+  - **shinoaki** 公开 API：按玩家名搜索判定真人/人机，拉取 PR/胜率/场均伤害等。
+  - **Wargaming 官方 Public API**：作为备选/增强，支持 EU/NA/ASIA/RU/CN 全服务器，可查账号战绩与单船战绩（不支持 RU/CN 时回退 shinoaki）。
+- **玩家战绩联网查询**：识别完成后自动查询战绩，战绩以紧凑文本注入 AI，让威胁评估基于真实数据而非「看名字风格」。
 - **舰船参数知识库**：加载约 945 艘船的官方数据（JSON），按本局出现的舰船按需提取主炮/炮弹/鱼雷/副炮/存活/机动/隐蔽/防空等关键参数，构建精简知识库供 AI 参考，避免全量数据塞爆 Token。
 - **三 AI 引擎可切换**：
   - **智谱 GLM-4V / GLM-4V-Plus**（OpenAI 兼容官方 API）
@@ -51,7 +52,10 @@ WoWSBattleAssistant/
 │   │       ├── pow_solver.js               # PoW 计算 JS
 │   │       └── sha3_wasm_bg.wasm           # SHA3 WASM 模块
 │   ├── Shinoaki/
-│   │   └── ShinoakiApiClient.cs  # 玩家搜索 + 战绩查询（判真/人机）
+│   │   └── ShinoakiApiClient.cs  # shinoaki 玩家搜索 + 战绩查询
+│   ├── WgApiClient.cs            # Wargaming 官方 API 战绩查询（V3.0.0）
+│   ├── GameFileMonitor.cs        # tempArenaInfo.json 监控（V3.0.0）
+│   ├── AppLog.cs                 # 应用日志（V3.0.0）
 │   ├── ScreenCaptureService.cs   # 屏幕截图 + DPI 处理 + Base64 编码
 │   ├── SettingsStore.cs          # 配置持久化（%AppData%）
 │   └── ShipDatabase.cs           # 战舰数据知识库（索引 + 参数提取）
@@ -198,6 +202,20 @@ dotnet publish -c Release -r win-x64 --self-contained true \
 - **wows_ships_data_*.json**：战舰数据文件，首次使用需在程序设置中加载
 
 ## 更新日志
+
+### V3.0.0（2026-08-03）
+
+**三大新特性**
+
+1. **对局文件自动读取**：新增 `GameFileMonitor`，监控游戏 `replays/tempArenaInfo.json`，对局加载时自动读取双方玩家名/shipId/阵营，**无需手动截阵容**。支持纯 JSON 与二进制包装格式（参考 ApeRadar MIT 实现）。
+2. **双战绩数据源**：新增 `WgApiClient`，接入 Wargaming 官方 Public API，支持 EU/NA/ASIA/RU/CN 全服务器账号战绩与单船战绩查询，作为 shinoaki 的备选/增强（RU/CN 回退 shinoaki）。
+3. **应用日志系统**：新增 `AppLog`，写入 `%AppData%\WoWSBattleAssistant\app.log`，支持在设置面板查看与导出，便于排查问题。
+
+**其他改进**
+- `MainWindow` 重构：集成对局文件监控、双战绩源切换、日志面板。
+- `SettingsWindow` 扩展：新增 WG API application_id、游戏路径、日志查看等配置项。
+- `ShipDatabase` 增强：支持 shipId 反查舰船名（用于对局文件模式）。
+- `IAIBattleAnalyzer` / `DeepSeekVisionAnalyzer` 提示词同步适配新数据源。
 
 ### V2.0.0（2026-08-03）
 

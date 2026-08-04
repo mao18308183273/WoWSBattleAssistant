@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -37,70 +38,46 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
 
     protected virtual string DefaultSystemPrompt =>
         """
-        你是《战舰世界》(World of Warships) 资深战术助手，擅长结合阵容面板、小地图、战舰参数和玩家战绩做局势判断与威胁评估。
+        你是《战舰世界》(World of Warships) 资深战术助手，擅长结合阵容数据、小地图、战舰参数和玩家战绩做局势判断与威胁评估。
 
-        【敌我判断——必须在看阵容图后自行完成】
-        阵容面板截图顶部有两个标题用于区分敌我：
-        - "队友" 标题（绿色衬底/背景）下方全部是我方（友军）舰船
-        - "敌方" 标题（红色衬底/背景）下方全部是敌方舰船
-        - 如果截图中只有"队友"标题，则所有舰船都是我方
-        - 不要假设左右分布，不同模式（随机/排位/行动）阵容面板左右可能不同，请严格依据标题判断
-        - 用户战舰位于"队友"（绿色标题）下方那一侧
-
-        【关于舰船名和玩家名的识别——请在分析时自行从阵容图识别】
-        阵容面板每一行的结构为：[玩家昵称] [飞船图标] [等级 舰船型号名]
-        - 玩家昵称在最左边，可能带 [军团] 标签（如 "[北洋狮]xxx"）
-        - 舰船名在玩家昵称右边，格式为"罗马数字等级 + 空格 + 舰船名"（如 "X 大选帝侯"、"VII 沙恩霍斯特"）
-        - 等级前缀永远是罗马数字（I-XII），紧跟空格，再跟舰船名。例如"X 鲸"是一个完整的舰船名，绝不能拆成"X"和"鲸"
-        - AI 提供的"本局所有舰船"列表可能包含识别错误（如把玩家名当成舰船名、把等级前缀拆分等），请你以阵容图中实际画面为准自行识别和验证
-
-        【输入】
-        - 阵容面板截图：用于识别敌我、玩家名、舰船名。请严格依据"队友"/"敌方"标题判断阵营。
-        - 小地图截图：图例 绿色=我方舰船，红色=敌方舰船，白色箭头=用户自己的舰船。
-        - 用户战舰名：这是用户自己驾驶的舰船，用于锚定身份。
-        - AI 提供的本局舰船列表：仅供参考，可能有误。
-        - 战舰参数知识库：仅供你内部参考，输出中不要复述、罗列参数。
-        - 玩家威胁评估清单：由联网查询 shinoaki 接口得到，提供每个玩家的搜索结果（命中/未命中）、玩家名是否含冒号、以及命中玩家的 PR/胜率/场均伤害/场均击杀/KD 等战绩。清单可能因前面的识别错误而有偏差，需要你结合阵容图自行验证。
+        【输入说明】
+        - 阵容数据：可能来自自动检测（游戏文件解析，玩家名/舰船名/阵营 100%准确）或 AI 视觉识别（仅供参考，可能有误）。
+          若为自动检测数据，阵营标签 [自己]/[队友]/[敌方] 是确定可信的，不需要额外验证。
+        - 小地图截图（可能不提供）：图例 绿色=我方舰船，红色=敌方舰船，白色箭头=用户舰船。
+        - 用户战舰名：用户自己驾驶的舰船。
+        - 本局舰船列表：所有参战舰船（不分敌我）。
+        - 战舰参数知识库：仅供内部参考，输出中不要复述、罗列参数。
+        - 玩家威胁评估清单：由联网战绩查询得到，含每个玩家的阵营标签、搜索结果、PR/胜率/场均伤害/场均击杀/KD 等战绩。
+          若为自动检测模式，玩家名与舰船名由游戏内部数据精确解析（100%准确），不需要验证。
 
         【严禁编造——最重要】
-        - 战舰参数（射程、隐蔽、伤害、航速、装甲等）必须且只能来自上方知识库文本。任何具体数值（如"射程18.6km""隐蔽5.8km""装填30秒"）必须能在知识库文本中找到出处，禁止凭印象或常识给出数字。
-        - 知识库未列出的项目，视为该舰"未提供/未知"，绝不可凭印象或常识编造。
-        - 【消耗品一律禁提】战舰知识库根本不包含消耗品数据（烟幕/引擎增压/雷达/水听/维修/发烟机/加速等），你没有任何依据判断某舰是否有某消耗品。一律当作"未知"：
-          · 严禁在输出中提到任何消耗品名称
-          · 严禁基于消耗品做战术建议（如"等他雷达结束再上""躲烟幕后""对水听范围外机动"）
-          · 改用基于舰船参数的描述代替（如"利用岛屿掩护接近""保持在隐蔽距离外""利用高航速转场"）
-          · 搞错消耗品会导致严重误判，这条是硬禁区
-        - 若某舰不在知识库中，明确说"参数未知"，不要编造任何数值。
+        - 战舰参数必须且只能来自知识库文本。任何具体数值必须能在知识库中找到出处，禁止凭印象给出数字。
+        - 知识库未列出的项目，视为该舰"未提供/未知"。
+        - 【消耗品一律禁提】知识库不包含消耗品数据。严禁提到任何消耗品名称或基于消耗品做战术建议。
+        - 若某舰不在知识库中，明确说"参数未知"。
 
         【关键判断规则】
-        1. 人机 vs 真人——由你综合以下三个信号判断，不要单凭任何一个信号下定论：
-           信号一·名字是否含冒号":"：人机玩家名通常带冒号（如 ":AI:xxx"），真人玩家名一般不带。但极少数真人名字也可能带冒号，不能单凭冒号定人机。
-           信号二·英文字母组合是否像人机：人机玩家的名字通常是无规律的英文字母组合（如 "BtrkXz"、"qwRfm"），而真人玩家的英文名通常有意义（单词、缩写或混拼）。中文名、带[军团]标签的名、"用户_数字"格式的名都是真人。
-           信号三·shinoaki 搜索是否命中：清单中标注了每个玩家"shinoaki搜索命中"或"shinoaki搜索未命中"。搜索命中=该玩家在战绩网站有记录，几乎可以确定是真人。搜索未命中可能是人机，但也可能是真人（名字识别有偏差、玩家未注册战绩等），需要结合信号一和信号二综合判断。
-           综合规则：
-           · 搜索命中 → 确定真人，可直接使用其战绩数据
-           · 搜索未命中 + 名字含冒号 + 字母组合无规律 → 判定为人机
-           · 搜索未命中 + 名字含中文/军团标签/用户_数字 → 判定为真人（搜索未命中可能是名字识别偏差）
-           · 搜索未命中 + 英文名但像有意义的单词 → 倾向真人但标注"疑似"
-           · 搜索未命中 + 英文名且无规律 + 不含冒号 → 倾向人机但标注"疑似"
-        2. 威胁评估：对判定为真人的玩家，以清单中战绩数据为依据——PR 值越高越强（参考：<900 较弱, 900-1450 中等, 1450-2100 很好, >2100 优秀），胜率与场均伤害反映玩家水平与战舰发挥。结合舰船性能综合判断哪几个真人最凶、最可能带节奏。人机玩家普遍威胁较低，但所驾舰船性能仍要考虑（如人机开 BB 仍有火力威胁）。
-        3. 优先目标：综合"玩家战绩威胁度""舰船性能威胁""是否真人"确定本局应优先处理的目标。
-        4. 若清单缺失或某玩家战绩查询失败（查询失败会在清单中标注），仅凭信号一和信号二判断，且必须明确标注"疑似"而非断言。
+        1. 人机 vs 真人——综合以下信号判断：
+           信号一·名字是否含冒号":"
+           信号二·名字是否像无规律字母组合
+           信号三·战绩搜索是否命中
+           · 搜索命中 → 真人
+           · 未命中+含冒号+字母无规律 → 人机
+           · 未命中+中文/军团标签/用户_数字 → 真人
+        2. 威胁评估：以清单中战绩数据为依据，结合舰船性能判断哪些真人最凶、最可能带节奏。
+        3. 优先目标：综合战绩威胁度+舰船性能+是否真人确定优先处理目标。
+        4. 若战绩查询失败，仅凭名字特征判断，标注"疑似"。
 
         【容错】
-        - 小地图上可能没有敌方舰船（开局对面未点亮）：此时威胁与策略基于阵容和参数推断，不要编造敌方位置。
-        - 双方可能出现同型舰：靠阵容图中的阵营归属区分，不要混淆敌我同型舰。
-        - 若阵容图里某些信息看不清，按能看清的部分判断，不要瞎编。
-        - 如果 AI 提供的舰船列表与阵容图不一致，以阵容图为准。
+        - 小地图上可能没有敌方舰船（开局未点亮）：威胁与策略基于阵容和参数推断。
+        - 双方可能出现同型舰：靠阵营标签区分。
+        - 若阵容数据来自自动检测则阵营可信；若来自 AI 识别则以阵容图为准。
 
-        【输出】直接给以下四部分，中文，分点，简洁。可引用具体数值（如"隐蔽5.8km""主炮射程18km"）但不要整段抄参数，不要废话套话：
-        1.【怎么玩这艘船】针对用户战舰，结合其参数特性给出本局打法要点：接敌距离、走位思路、应避免的对抗等。注意：不要提任何消耗品（知识库无此数据），改用基于舰船参数的描述。
-        2.【敌方威胁评估】
-           - 先点明敌方有几艘是人机、几艘是真人（由你根据上述三条规则综合判断，并简要说明判断依据）。
-           - 对真人玩家，结合其战绩（PR/胜率/场均伤害）与所驾舰船判断谁最凶、最可能带节奏，说明理由。
-           - 结合舰船性能（主炮口径/射程/隐蔽/鱼雷/机动/防空）说明每个重点目标的威胁点。
-        3.【优先攻击目标】明确给出本局建议优先处理的目标（具体舰船+是否真人），一句话理由+克制手段。
-        4.【整局局势与策略】结合小地图双方位置分布（若有红色敌舰）给出整体走向与关键决策（推进/转场/控点/视野/集火）。若敌方未点亮，给出开局预案。
+        【输出】直接给以下四部分，中文，分点，简洁：
+        1.【怎么玩这艘船】针对用户战舰，结合参数特性给出本局打法要点。
+        2.【敌方威胁评估】点明敌方人机/真人数量，对真人玩家结合战绩与舰船判断谁最凶。
+        3.【优先攻击目标】明确建议优先处理的目标（具体舰船+理由+克制手段）。
+        4.【整局局势与策略】结合小地图双方位置（若有）给出整体走向与关键决策。若敌方未点亮，给出开局预案。
 
         所有建议必须落到本局具体舰船和位置上，禁止与局势无关的通用套话。
         """;
@@ -116,7 +93,6 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
             if (string.IsNullOrWhiteSpace(ApiKey))
                 throw new InvalidOperationException($"未配置 {ProviderName} 的 API Key，请在设置中填写。");
 
-            // 编码两张图
             if (string.IsNullOrWhiteSpace(request.ImageBase64) && request.MinimapImage != null)
                 request.ImageBase64 = ScreenCaptureService.EncodeToBase64(request.MinimapImage);
             if (request.LineupImage != null && string.IsNullOrWhiteSpace(request.LineupImageBase64))
@@ -127,10 +103,8 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
 
             var systemPrompt = string.IsNullOrWhiteSpace(request.SystemPrompt)
                 ? DefaultSystemPrompt : request.SystemPrompt;
-
             var userText = BuildUserPrompt(request);
 
-            // 收集所有要发送的图片（阵容图在前，小地图在后）
             var images = new List<string>();
             if (!string.IsNullOrWhiteSpace(request.LineupImageBase64))
                 images.Add(request.LineupImageBase64);
@@ -141,18 +115,46 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
             httpReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
             httpReq.Content = new StringContent(payload, Encoding.UTF8, "application/json");
 
-            using var resp = await HttpClient.SendAsync(httpReq, ct);
-            var respJson = await resp.Content.ReadAsStringAsync(ct);
+            using var resp = await HttpClient.SendAsync(httpReq, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!resp.IsSuccessStatusCode)
             {
+                var errText = await resp.Content.ReadAsStringAsync(ct);
                 result.Success = false;
-                result.Error = $"{ProviderName} API 返回 {resp.StatusCode}: {Truncate(respJson, 500)}";
+                result.Error = $"{ProviderName} API 返回 {resp.StatusCode}: {Truncate(errText, 500)}";
                 return result;
             }
 
-            var content = ParseContent(respJson);
+            // 流式读取 SSE 响应
+            var sb = new StringBuilder();
+            using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            var chunkCallback = request.OnStreamChunk;
+
+            while (!ct.IsCancellationRequested)
+            {
+                var line = await reader.ReadLineAsync(ct);
+                if (line == null) break;
+                if (line.Length == 0) continue;
+                if (!line.StartsWith("data: ")) continue;
+
+                var data = line[6..];
+                if (data == "[DONE]") break;
+
+                try
+                {
+                    var node = JsonNode.Parse(data);
+                    var delta = node?["choices"]?[0]?["delta"]?["content"]?.ToString();
+                    if (!string.IsNullOrEmpty(delta))
+                    {
+                        sb.Append(delta);
+                        chunkCallback?.Invoke(delta);
+                    }
+                }
+                catch { /* 跳过解析异常的行 */ }
+            }
+
             result.Success = true;
-            result.Content = content;
+            result.Content = sb.ToString();
             result.Elapsed = sw.Elapsed;
             return result;
         }
@@ -171,17 +173,29 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         }
     }
 
-    /// <summary>构造用户提示词（含知识库、扁平舰船列表、玩家威胁评估，不分敌我）</summary>
+    /// <summary>构造用户提示词（含知识库、舰船列表、玩家威胁评估）</summary>
     protected virtual string BuildUserPrompt(BattleAnalysisRequest req)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("分析本局。图片顺序：");
-        if (!string.IsNullOrWhiteSpace(req.LineupImageBase64))
-            sb.AppendLine("1) 阵容面板截图（请自行依据顶部「队友」/「敌方」绿色/红色标题判断敌我，不要假设左右分布）");
-        sb.AppendLine("2) 小地图截图（绿=我方，红=敌方，白箭头=用户自己）");
+
+        if (req.LineupFromAutoDetect)
+        {
+            // 自动检测模式：数据来自游戏文件解析，100%准确
+            sb.AppendLine("分析本局。阵营数据由游戏内部文件精确解析，无需验证。");
+            sb.AppendLine("图片：小地图截图（绿=我方，红=敌方，白箭头=用户自己）");
+        }
+        else
+        {
+            // 手动识别模式（降级）：需要 AI 结合阵容图自行验证
+            sb.AppendLine("分析本局。图片顺序：");
+            if (!string.IsNullOrWhiteSpace(req.LineupImageBase64))
+                sb.AppendLine("1) 阵容面板截图（请自行依据顶部「队友」/「敌方」绿色/红色标题判断敌我，不要假设左右分布）");
+            sb.AppendLine("2) 小地图截图（绿=我方，红=敌方，白箭头=用户自己）");
+        }
         sb.AppendLine();
         sb.AppendLine($"【我的战舰】{req.MyShip}");
-        sb.AppendLine($"【AI识别的舰船列表】{req.AllShips}（仅供参考，可能有误，请以阵容图为准自行识别）");
+        sb.AppendLine($"【本局所有舰船】{req.AllShips}" +
+            (req.LineupFromAutoDetect ? "（来自游戏数据，100%准确）" : "（仅供参考，可能有误，请以阵容图为准）"));
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(req.PlayerThreatText))
             sb.AppendLine(req.PlayerThreatText);
@@ -189,7 +203,10 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         if (!string.IsNullOrWhiteSpace(req.KnowledgeBaseText))
             sb.AppendLine(req.KnowledgeBaseText);
         sb.AppendLine();
-        sb.AppendLine("请按系统提示要求，结合阵容图自行识别敌我、玩家名和舰船名，完成四部分输出。威胁评估参考上方玩家战绩清单，但如清单与图片不符以图片为准。");
+        if (req.LineupFromAutoDetect)
+            sb.AppendLine("以上阵容数据和阵营标签由游戏文件精确解析（100%准确），请直接基于此进行分析。威胁评估参考上方玩家战绩清单。");
+        else
+            sb.AppendLine("请按系统提示要求，结合阵容图自行识别敌我、玩家名和舰船名，完成四部分输出。威胁评估参考上方玩家战绩清单，但如清单与图片不符以图片为准。");
         return sb.ToString();
     }
 
@@ -212,7 +229,8 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
                 new { role = "user", content = contentList }
             },
             temperature = 0.6,
-            max_tokens = 2048
+            max_tokens = 2048,
+            stream = true
         };
         return JsonSerializer.Serialize(payload, JsonOpts);
     }
