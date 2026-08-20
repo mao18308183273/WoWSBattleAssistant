@@ -38,6 +38,34 @@ public sealed class BattleAnalysisRequest
 
     /// <summary>流式输出回调。AI 每生成一段文本就调用一次，用于实时更新 UI。</summary>
     public Action<string>? OnStreamChunk { get; set; }
+
+    /// <summary>追问模式：非空时表示继续已有对话，直接作为用户追问文本发送。</summary>
+    public string? FollowUpQuestion { get; set; }
+
+    /// <summary>多轮对话上下文。非空时 Analyzer 将复用历史消息发送追问。</summary>
+    public ConversationContext? Conversation { get; set; }
+}
+
+/// <summary>多轮对话上下文——分析完成后可继续追问</summary>
+public sealed class ConversationContext
+{
+    /// <summary>OpenAI 兼容格式的消息历史（含 system/user/assistant 角色）</summary>
+    public List<object> Messages { get; set; } = new();
+
+    /// <summary>当前使用的系统提示词</summary>
+    public string SystemPrompt { get; set; } = "";
+
+    /// <summary>DeepSeek 专用：会话 ID</summary>
+    public string? DeepSeekSessionId { get; set; }
+
+    /// <summary>DeepSeek 专用：最后一条消息 ID</summary>
+    public int DeepSeekLastMessageId { get; set; }
+
+    /// <summary>最后一次分析时使用的知识库文本（追问时复用）</summary>
+    public string KnowledgeBaseText { get; set; } = "";
+
+    /// <summary>最后一次分析时的玩家威胁文本（追问时复用）</summary>
+    public string PlayerThreatText { get; set; } = "";
 }
 
 /// <summary>分析结果</summary>

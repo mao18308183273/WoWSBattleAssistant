@@ -16,6 +16,11 @@ public partial class SettingsWindow : Window
     private readonly ShipDatabase _database;
     private AppSettings _draft; // 编辑副本
 
+    private static readonly System.Net.Http.HttpClient SharedHttp = new()
+    {
+        Timeout = TimeSpan.FromSeconds(10)
+    };
+
     public SettingsWindow(AppSettings settings, ShipDatabase database)
     {
         InitializeComponent();
@@ -38,6 +43,8 @@ public partial class SettingsWindow : Window
             DeepSeekToken = s.DeepSeekToken,
             DeepSeekCookie = s.DeepSeekCookie,
             EnableDeepSeekThinking = s.EnableDeepSeekThinking,
+            EnableVoiceControl = s.EnableVoiceControl,
+            VoiceConfidenceThreshold = s.VoiceConfidenceThreshold,
             ShipDataPath = s.ShipDataPath,
             MinimapRegion = s.MinimapRegion,
             WindowLeft = s.WindowLeft,
@@ -59,6 +66,9 @@ public partial class SettingsWindow : Window
         RbQwen.IsChecked = _draft.AiProvider == AiProvider.Qwen;
         RbDeepSeek.IsChecked = _draft.AiProvider == AiProvider.DeepSeek;
 
+        // 只显示当前选中提供方的配置面板
+        UpdateAiConfigPanelVisibility();
+
         PbGlmKey.Password = _draft.GlmApiKey;
         CbGlmModel.Items.Clear();
         foreach (var m in AIAnalyzerFactory.GlmModels) CbGlmModel.Items.Add(m);
@@ -76,6 +86,20 @@ public partial class SettingsWindow : Window
         PbDeepSeekToken.Password = _draft.DeepSeekToken;
         TxtDeepSeekCookie.Text = _draft.DeepSeekCookie;
         ChkDsThinking.IsChecked = _draft.EnableDeepSeekThinking;
+
+        // 语音控制
+        ChkVoiceControl.IsChecked = _draft.EnableVoiceControl;
+        SldVoiceThreshold.Value = _draft.VoiceConfidenceThreshold;
+        TxtThresholdLabel.Text = _draft.VoiceConfidenceThreshold.ToString("0.0");
+        SldVoiceThreshold.ValueChanged += (_, _) =>
+        {
+            _draft.VoiceConfidenceThreshold = Math.Round(SldVoiceThreshold.Value, 1);
+            TxtThresholdLabel.Text = _draft.VoiceConfidenceThreshold.ToString("0.0");
+        };
+        UpdateVoiceStatus();
+
+        // 战力悬浮窗
+        ChkPowerOverlay.IsChecked = _draft.EnablePowerOverlay;
 
         TxtShipDataPath.Text = _draft.ShipDataPath;
         UpdateShipCount();
@@ -151,6 +175,51 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void BtnBrowseGameFolder_Click(object sender, RoutedEventArgs e)
+    {
+        // 用 FolderBrowserDialog 让你直接选目录，避免手敲或复制粘贴可能带来的不可见字符问题
+        var initDir = string.IsNullOrWhiteSpace(TxtGamePath.Text) ? null : SafeParent(TxtGamePath.Text);
+        var dlg = new OpenFolderDialog
+        {
+            Title = "选择游戏根目录（含 bin、replays 子文件夹的那个）",
+            InitialDirectory = initDir,
+        };
+        try
+        {
+            if (dlg.ShowDialog() == true)
+            {
+                TxtGamePath.Text = dlg.FolderName;
+                _draft.GamePath = dlg.FolderName;
+                VerifyGamePath();
+            }
+        }
+        catch (Win32Exception)
+        {
+            // 上一次保存的路径所在驱动器不存在（如 U 盘已拔出），回退到默认位置
+            dlg.InitialDirectory = null;
+            try
+            {
+                if (dlg.ShowDialog() == true)
+                {
+                    TxtGamePath.Text = dlg.FolderName;
+                    _draft.GamePath = dlg.FolderName;
+                    VerifyGamePath();
+                }
+            }
+            catch { /* 用户取消或再次失败，忽略 */ }
+        }
+    }
+
+    private static string SafeParent(string path)
+    {
+        try
+        {
+            var p = Path.GetDirectoryName(path);
+            return string.IsNullOrEmpty(p) ? path : p;
+        }
+        catch { return path; }
+    }
+
     private void BtnVerifyGame_Click(object sender, RoutedEventArgs e)
     {
         _draft.GamePath = TxtGamePath.Text.Trim();
@@ -169,7 +238,26 @@ public partial class SettingsWindow : Window
 
         if (!Directory.Exists(path))
         {
-            TxtGamePathStatus.Text = "❌ 目录不存在";
+            // Directory.Exists 返回 false 未必是真的"没这个目录"——
+            // 最常见原因是映射网络驱动器（NAS/共享文件夹）在特定运行上下文
+            //（管理员权限、服务会话等）里不可见。
+            var diag = DiagnoseInaccessiblePath(path);
+            var parent = Path.GetDirectoryName(Path.GetFullPath(path));
+            // 父目录存在 → 在同级找相似名称，提示用户
+            var hint = "";
+            if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
+            {
+                var siblings = Directory.GetDirectories(parent)
+                    .Select(Path.GetFileName)
+                    .Where(n => n != null && (
+                        n.Contains("Warship", StringComparison.OrdinalIgnoreCase) ||
+                        n.Contains("WoWS", StringComparison.OrdinalIgnoreCase)))
+                    .Cast<string>()
+                    .ToList();
+                if (siblings.Count > 0)
+                    hint = $" {parent} 下的战舰相关文件夹: {string.Join(" / ", siblings.Select(s => "\"" + s + "\""))}。";
+            }
+            TxtGamePathStatus.Text = $"❌ 无法访问此目录{(string.IsNullOrEmpty(diag) ? "" : $"（{diag}）")}。{hint}若目录确实存在，可能当前程序权限看不到网络驱动器，请尝试改用 UNC 路径（如 \\\\NAS名\\共享\\Games\\...）。";
             TxtGamePathStatus.Foreground = System.Windows.Media.Brushes.OrangeRed;
             return;
         }
@@ -200,8 +288,9 @@ public partial class SettingsWindow : Window
                 TxtGamePathStatus.Foreground = System.Windows.Media.Brushes.LimeGreen;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            AppLog.Warn($"游戏路径验证异常: {ex.Message}");
             TxtGamePathStatus.Text = "✅ 目录有效（含 replays 文件夹）";
             TxtGamePathStatus.Foreground = System.Windows.Media.Brushes.LimeGreen;
         }
@@ -229,7 +318,7 @@ public partial class SettingsWindow : Window
                     return loc;
             }
         }
-        catch { }
+        catch (Exception ex) { AppLog.Warn($"注册表检测游戏路径失败: {ex.Message}"); }
 
         // 常见安装路径
         var common = new[]
@@ -293,6 +382,18 @@ public partial class SettingsWindow : Window
         Close();
     }
 
+    private void OnAiProviderChanged(object sender, RoutedEventArgs e)
+    {
+        UpdateAiConfigPanelVisibility();
+    }
+
+    private void UpdateAiConfigPanelVisibility()
+    {
+        GlmConfigPanel.Visibility = RbGlm.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        QwenConfigPanel.Visibility = RbQwen.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        DsConfigPanel.Visibility = RbDeepSeek.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void BtnSave_Click(object sender, RoutedEventArgs e)
     {
         // 把 UI 值写回 _draft
@@ -306,27 +407,27 @@ public partial class SettingsWindow : Window
         _draft.DeepSeekToken = PbDeepSeekToken.Password;
         _draft.DeepSeekCookie = TxtDeepSeekCookie.Text;
         _draft.EnableDeepSeekThinking = ChkDsThinking.IsChecked == true;
+        _draft.EnableVoiceControl = ChkVoiceControl.IsChecked == true;
+        _draft.VoiceConfidenceThreshold = Math.Round(SldVoiceThreshold.Value, 1);
+        _draft.EnablePowerOverlay = ChkPowerOverlay.IsChecked == true;
         _draft.ShipDataPath = TxtShipDataPath.Text.Trim();
         _draft.SystemPrompt = TxtSystemPrompt.Text;
         _draft.Server = CbServer.SelectedItem?.ToString() ?? "cn";
         _draft.GamePath = TxtGamePath.Text.Trim();
         _draft.ApiBackend = (ApiBackend)CbApiBackend.SelectedIndex;
 
-        // 校验
+        // 校验：API Key 缺失时仅提醒，不阻止保存（悬浮窗等非 AI 功能不需要 Key）
         if (_draft.AiProvider == AiProvider.Glm && string.IsNullOrWhiteSpace(_draft.GlmApiKey))
         {
-            MessageBox.Show("请填写 GLM API Key", "提示");
-            return;
+            MessageBox.Show("GLM API Key 未填写，AI 分析功能将不可用。\n如需使用 AI 分析，请到智谱开放平台获取 Key。", "提示");
         }
-        if (_draft.AiProvider == AiProvider.Qwen && string.IsNullOrWhiteSpace(_draft.QwenApiKey))
+        else if (_draft.AiProvider == AiProvider.Qwen && string.IsNullOrWhiteSpace(_draft.QwenApiKey))
         {
-            MessageBox.Show("请填写通义 API Key", "提示");
-            return;
+            MessageBox.Show("通义 API Key 未填写，AI 分析功能将不可用。\n如需使用 AI 分析，请到阿里云百炼平台获取 Key。", "提示");
         }
-        if (_draft.AiProvider == AiProvider.DeepSeek && string.IsNullOrWhiteSpace(_draft.DeepSeekToken))
+        else if (_draft.AiProvider == AiProvider.DeepSeek && string.IsNullOrWhiteSpace(_draft.DeepSeekToken))
         {
-            MessageBox.Show("请填写 DeepSeek Token", "提示");
-            return;
+            MessageBox.Show("DeepSeek Token 未填写，AI 分析功能将不可用。\n如需使用 AI 分析，请登录 chat.deepseek.com → F12 → 应用 → 本地存储 → 复制 userToken。", "提示");
         }
 
         // 复制回原对象并保存
@@ -346,6 +447,8 @@ public partial class SettingsWindow : Window
         dst.DeepSeekToken = src.DeepSeekToken;
         dst.DeepSeekCookie = src.DeepSeekCookie;
         dst.EnableDeepSeekThinking = src.EnableDeepSeekThinking;
+        dst.EnableVoiceControl = src.EnableVoiceControl;
+        dst.VoiceConfidenceThreshold = src.VoiceConfidenceThreshold;
         dst.ShipDataPath = src.ShipDataPath;
         dst.MinimapRegion = src.MinimapRegion;
         dst.SystemPrompt = src.SystemPrompt;
@@ -385,5 +488,189 @@ public partial class SettingsWindow : Window
             AppLog.Clear();
             TxtLogViewer.Text = "(日志已清空)";
         }
+    }
+
+    private void ChkVoiceControl_Changed(object sender, RoutedEventArgs e)
+    {
+        UpdateVoiceStatus();
+    }
+
+    private void UpdateVoiceStatus()
+    {
+        if (ChkVoiceControl.IsChecked == true)
+        {
+            var info = VoiceController.GetInstalledRecognizerInfo();
+            if (info != null)
+                TxtVoiceStatus.Text = $"✅ 已检测到语音引擎: {info}。使用 Windows 默认麦克风。";
+            else
+            {
+                TxtVoiceStatus.Text = "⚠ 未找到中文语音识别引擎。请点击下方「打开 Windows 语音设置」→ 添加中文（简体）语言 → 勾选「语音识别」安装语音包后重启软件。";
+                TxtVoiceStatus.Foreground = System.Windows.Media.Brushes.OrangeRed;
+            }
+        }
+        else
+        {
+            TxtVoiceStatus.Text = "语音控制已关闭";
+        }
+    }
+
+    private void BtnOpenSpeechSettings_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // Windows 10/11 语音设置深链
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "ms-settings:speech",
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            // 旧版 Windows 回退到控制面板
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "control",
+                    Arguments = "/name Microsoft.SpeechRecognition",
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                MessageBox.Show($"无法自动打开语音设置，请手动打开：\n设置 → 时间和语言 → 语言 → 中文(简体) → 语音\n\n错误: {ex.Message}",
+                    "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+    }
+
+    private async void BtnTestMic_Click(object sender, RoutedEventArgs e)
+    {
+        BtnTestMic.IsEnabled = false;
+        BtnTestMic.Content = "测试中…";
+        TxtVoiceTestResult.Text = "正在初始化语音识别（3 秒后开始说话）…";
+        TxtVoiceTestResult.Foreground = System.Windows.Media.Brushes.Gray;
+        try
+        {
+            using var tester = new VoiceTestRunner();
+            var text = await tester.RunAsync(TimeSpan.FromSeconds(5));
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                TxtVoiceTestResult.Text = "❌ 5 秒内未识别到任何语音。可能原因：麦克风权限未开启、未选默认麦克风、或者环境噪音太大。";
+                TxtVoiceTestResult.Foreground = System.Windows.Media.Brushes.OrangeRed;
+            }
+            else
+            {
+                TxtVoiceTestResult.Text = $"✅ 识别成功: \"{text}\"";
+                TxtVoiceTestResult.Foreground = System.Windows.Media.Brushes.LimeGreen;
+            }
+        }
+        catch (Exception ex)
+        {
+            TxtVoiceTestResult.Text = $"❌ 测试失败: {ex.Message}";
+            TxtVoiceTestResult.Foreground = System.Windows.Media.Brushes.OrangeRed;
+        }
+        finally
+        {
+            BtnTestMic.IsEnabled = true;
+            BtnTestMic.Content = "🎤 测试麦克风";
+        }
+    }
+
+    private async void BtnTestApi_Click(object sender, RoutedEventArgs e)
+    {
+        TxtApiTestResult.Text = "测试中...";
+        TxtApiTestResult.Foreground = System.Windows.Media.Brushes.Gray;
+
+        try
+        {
+            var backend = (ApiBackend)CbApiBackend.SelectedIndex;
+            var server = CbServer.SelectedItem?.ToString() ?? "cn";
+            var testPlayer = "test";
+
+            if (backend == ApiBackend.Shinoaki || backend == ApiBackend.Vortex)
+            {
+                var resp = await SharedHttp.GetStringAsync($"https://wows.mgaia.top/api/shinoaki/user/search/v2/{server}/{testPlayer}?type=exact");
+                TxtApiTestResult.Text = $"✅ Shinoaki API 连接正常 ({server}服)";
+                TxtApiTestResult.Foreground = System.Windows.Media.Brushes.LimeGreen;
+            }
+            else
+            {
+                var appId = _draft.WgApplicationId;
+                var domain = backend == ApiBackend.WgPublicYuyuko
+                    ? "dev-proxy.wows.shinoaki.com:7700/dev"
+                    : "api.worldofwarships.asia";
+                var url = backend == ApiBackend.WgPublicYuyuko
+                    ? $"https://dev-proxy.wows.shinoaki.com:7700/dev/wows/account/list/?application_id={appId}&search={testPlayer}"
+                    : $"https://api.worldofwarships.asia/wows/account/list/?application_id={appId}&search={testPlayer}";
+
+                var resp = await SharedHttp.GetStringAsync(url);
+                TxtApiTestResult.Text = $"✅ WG API 连接正常";
+                TxtApiTestResult.Foreground = System.Windows.Media.Brushes.LimeGreen;
+            }
+        }
+        catch (Exception ex)
+        {
+            TxtApiTestResult.Text = $"❌ 连接失败: {ex.Message}";
+            TxtApiTestResult.Foreground = System.Windows.Media.Brushes.OrangeRed;
+        }
+    }
+
+    /// <summary>诊断为什么 Directory.Exists 失败。返回可读的原因字符串。</summary>
+    private static string DiagnoseInaccessiblePath(string path)
+    {
+        try
+        {
+            // 先查路径里有没有可疑字符（全角字母/标点、零宽字符、不可见 Unicode 等极易导致 Directory.Exists 失败）
+            var suspicious = new List<string>();
+            for (int i = 0; i < path.Length; i++)
+            {
+                var c = path[i];
+                bool isAsciiPrintable = c >= 0x20 && c < 0x7F;
+                bool isCJK = c >= 0x4E00 && c <= 0x9FFF; // 中文表意文字（OK）
+                bool isCJKPunct = c == '、' || c == '。' || c == '，';
+                if (!isAsciiPrintable && !isCJK && !isCJKPunct)
+                    suspicious.Add($"位置 {i}: U+{((int)c):X4} ('{c}')");
+                // 全角字母/数字也算可疑（容易混入复制粘贴）
+                if (c >= 0xFF01 && c <= 0xFF5E)
+                    suspicious.Add($"位置 {i}: 全角字符 U+{((int)c):X4} ('{c}')");
+            }
+            if (suspicious.Count > 0)
+                return "路径包含可疑字符（复制粘贴可能带进来全角/不可见字符）: " + string.Join("; ", suspicious.Take(5)) +
+                       (suspicious.Count > 5 ? $" …共 {suspicious.Count} 处" : "") + "。建议改用「📂 浏览」按钮直接选择目录。";
+
+            path = path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var root = Path.GetPathRoot(path);
+            if (root == null) return "无法解析盘符";
+
+            var drives = DriveInfo.GetDrives()
+                .FirstOrDefault(d => string.Equals(d.Name.TrimEnd('\\'), root.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase));
+            if (drives == null) return "该盘符不存在";
+            if (!drives.IsReady) return "该盘符未就绪（如未插盘、网络未连）";
+            if (drives.DriveType == DriveType.Network)
+                return "映射网络驱动器，当前权限看不到。请在文件资源管理器地址栏找到 UNC 路径（如 \\\\server\\share），用 UNC 替代盘符。";
+
+            // 盘符是本地盘 → 逐级拆路径，看卡在哪一级
+            var parts = new List<string>();
+            var current = path;
+            while (current != null && current.Length > root.Length)
+            {
+                parts.Add(current);
+                current = Path.GetDirectoryName(current);
+            }
+            parts.Reverse();
+            string? lastExists = root;
+            foreach (var p in parts)
+            {
+                if (Directory.Exists(p)) { lastExists = p; continue; }
+                return $"\"{Path.GetFileName(p)}\" 这一级不存在（{lastExists} 可见，之下就没有了）。建议打开文件资源管理器确认 {lastExists} 下的实际文件夹名。";
+            }
+        }
+        catch (Exception ex)
+        {
+            return $"访问异常: {ex.Message}";
+        }
+        return "";
     }
 }

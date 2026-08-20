@@ -8,13 +8,25 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>WoWSBattleAssistant</RootNamespace>
     <AssemblyName>WoWSBattleAssistant</AssemblyName>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+
+  <!-- 排除 WinInstaller 子项目，防止其 XAML/CS 被主项目重复编译 -->
+  <ItemGroup>
+    <Compile Remove="WinInstaller\**" />
+    <Page Remove="WinInstaller\**" />
+    <EmbeddedResource Remove="WinInstaller\**" />
+    <None Remove="WinInstaller\**" />
+  </ItemGroup>
 
   <!-- DeepSeek PoW 求解器资源(嵌入到程序集,运行时释放到临时目录) -->
   <ItemGroup>
     <EmbeddedResource Include="Services\AI\DeepSeek\pow_solver.js" />
     <EmbeddedResource Include="Services\AI\DeepSeek\sha3_wasm_bg.wasm" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Speech" Version="9.0.0" />
   </ItemGroup>
 
 </Project>

@@ -43,3 +43,13 @@ Thumbs.db
 
 # Logs
 *.log
+
+# 安装程序与打包脚本（仅通过 GitHub Releases 分发）
+WinInstaller/
+installer/
+Setup.bat
+pack.sed
+
+# 发布二进制
+*.exe
+*.msi

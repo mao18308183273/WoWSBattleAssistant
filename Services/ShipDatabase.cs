@@ -379,7 +379,7 @@ public sealed class ShipDatabase
         ["usa"] = "美系", ["germany"] = "德系", ["japan"] = "日系", ["ussr"] = "苏系",
         ["uk"] = "英系", ["france"] = "法系", ["italy"] = "意系", ["pan_asia"] = "泛亚",
         ["pan_america"] = "泛美", ["europe"] = "泛欧", ["netherlands"] = "荷兰",
-        ["spain"] = "西班牙", ["commonwealth"] = "英联邦", ["pan_america"] = "泛美",
+        ["spain"] = "西班牙", ["commonwealth"] = "英联邦",
     };
 }
 

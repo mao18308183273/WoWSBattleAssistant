@@ -16,6 +16,9 @@ public sealed class GameFileMonitor
 {
     private DateTimeOffset _latestWriteTime = DateTimeOffset.MinValue;
 
+    /// <summary>重置监控状态（清空阵容后调用），使同一场对局也能被重新检测。</summary>
+    public void ResetWatch() => _latestWriteTime = DateTimeOffset.MinValue;
+
     /// <summary>查找最新的 tempArenaInfo.json 并判断是否有新对局。
     /// 传入游戏根目录路径，返回文件路径，若无新对局返回空字符串。</summary>
     public string GetLatestTempArenaInfoFile(string gamePath)
@@ -71,8 +74,8 @@ public sealed class GameFileMonitor
             var vehicles = json["vehicles"] as JsonArray;
             if (vehicles == null) return result;
 
-            var db = new ShipDatabase(); // 仅用于 GetShipDisplayName，不重新加载
-
+            // 注意：此处不使用知识库（知识库尚未加载时也能返回阵容）
+            // 只从 tempArenaInfo.json 自身的字段中读取可能存在的舰船相关信息。
             foreach (var v in vehicles)
             {
                 if (v is not JsonObject vo) continue;
@@ -82,6 +85,18 @@ public sealed class GameFileMonitor
                 var shipId = vo["shipId"]?.GetValue<long>() ?? 0;
                 var playerId = vo["id"]?.GetValue<int>() ?? 0;
 
+                // 尝试读取可能存在的舰船字段：不同版本/模式下可能有 ship_name /
+                // vehicleName / params 等；如果没有则保持 null，后续 ApplyLineupDetection
+                // 在知识库未命中时用 "舰船(shipId)" 作为降级显示。
+                var shipRawName =
+                    vo["ship_name"]?.ToString() ??
+                    vo["shipName"]?.ToString() ??
+                    vo["vehicle_name"]?.ToString() ??
+                    vo["title"]?.ToString() ??
+                    vo["type"]?.ToString();
+
+                var shipParams = vo["ship_params"]?.ToJsonString();
+
                 // 过滤 bot（id <= 30，出现在剧情/护航模式中）
                 if (playerId <= 30) continue;
 
@@ -89,6 +104,8 @@ public sealed class GameFileMonitor
                 {
                     PlayerName = name,
                     ShipId = shipId,
+                    ShipRawName = shipRawName,
+                    ShipParams = shipParams,
                     Relation = relation,
                 });
             }
@@ -189,6 +206,12 @@ public sealed class DetectedPlayer
 
     /// <summary>游戏内 shipId（数字）</summary>
     public long ShipId { get; set; }
+
+    /// <summary>舰船原名（如果 tempArenaInfo.json 中提供了该字段）</summary>
+    public string? ShipRawName { get; set; }
+
+    /// <summary>舰船等级/类型/参数（如果 tempArenaInfo.json 中提供了 ship_params）</summary>
+    public string? ShipParams { get; set; }
 
     /// <summary>阵营: 0=自己, 1=队友, 2=敌方</summary>
     public int Relation { get; set; }

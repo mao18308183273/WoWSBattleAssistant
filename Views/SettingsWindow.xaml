@@ -3,7 +3,124 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="设置" Height="640" Width="520"
         WindowStartupLocation="CenterOwner"
-        ResizeMode="CanResize" Background="#FFF5F5F5">
+        ResizeMode="CanResize" Background="#FF13141F">
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="14,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="5"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="TextBox" x:Key="DarkInput">
+            <Setter Property="Background" Value="#FF1A1B2E"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#FF3A3B55"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style TargetType="PasswordBox" x:Key="DarkPwd">
+            <Setter Property="Background" Value="#FF1A1B2E"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#FF3A3B55"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#FFCCCCCC"/>
+        </Style>
+        <Style TargetType="RadioButton">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="#FF1A1B2E"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="#FF3A3B55"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton Name="ToggleButton"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          IsChecked="{Binding Path=IsDropDownOpen,RelativeSource={RelativeSource TemplatedParent},Mode=TwoWay}"
+                                          ClickMode="Press" Focusable="False"/>
+                            <ContentPresenter Name="ContentSite" IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              Margin="10,3,30,3" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                            <TextBox x:Name="PART_EditableTextBox" Visibility="Hidden"
+                                     Background="#FF1A1B2E" Foreground="White"
+                                     BorderThickness="0" Margin="8,3,30,3" VerticalAlignment="Center"
+                                     IsReadOnly="{TemplateBinding IsReadOnly}"/>
+                            <ToggleButton Grid.Column="1" IsChecked="{Binding Path=IsDropDownOpen,RelativeSource={RelativeSource TemplatedParent},Mode=TwoWay}" 
+                                          IsHitTestVisible="False" Margin="0,0,4,0" VerticalAlignment="Center">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Path Data="M0,0 L4,5 L8,0" Fill="White" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True" Focusable="False" PopupAnimation="Slide">
+                                <Grid Name="DropDown" SnapsToDevicePixels="True"
+                                      MinWidth="{TemplateBinding ActualWidth}"
+                                      MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <Border x:Name="DropDownBorder" Background="#FF1A1B2E"
+                                            BorderBrush="#FF3A3B55" BorderThickness="1" CornerRadius="4"/>
+                                    <ScrollViewer Margin="4,6" SnapsToDevicePixels="True">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEditable" Value="true">
+                                <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="ContentSite" Property="Visibility" Value="Hidden"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="#FF1A1B2E"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#FF2D2E44"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#FF3A3B55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -14,36 +131,89 @@
             <StackPanel>
 
                 <!-- AI 提供方 -->
-                <Border Background="White" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+                <Border Background="#FF1E1E30" CornerRadius="8" Padding="14" Margin="0,0,0,10">
                     <StackPanel>
-                        <TextBlock Text="AI 模型" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
-                        <RadioButton x:Name="RbGlm" Content="智谱 GLM-4V（国内免费额度，中文好）" Margin="0,4" GroupName="Ai"/>
-                        <RadioButton x:Name="RbQwen" Content="通义千问 VL（阿里，免费额度）" Margin="0,4" GroupName="Ai"/>
-                        <RadioButton x:Name="RbDeepSeek" Content="DeepSeek 视觉（网页版逆向，需登录态，免费）" Margin="0,4" GroupName="Ai"/>
+                        <TextBlock Text="AI 模型" FontWeight="Bold" FontSize="14" Foreground="White" Margin="0,0,0,8"/>
+                        <RadioButton x:Name="RbGlm" Content="智谱 GLM-4V（国内免费额度，中文好）" Margin="0,4" GroupName="Ai" Click="OnAiProviderChanged"/>
+                        <RadioButton x:Name="RbQwen" Content="通义千问 VL（阿里，免费额度）" Margin="0,4" GroupName="Ai" Click="OnAiProviderChanged"/>
+                        <RadioButton x:Name="RbDeepSeek" Content="DeepSeek 视觉（网页版逆向，需登录态，免费）" Margin="0,4" GroupName="Ai" Click="OnAiProviderChanged"/>
 
-                        <TextBlock Text="GLM API Key" Margin="0,12,0,4" FontSize="12"/>
-                        <PasswordBox x:Name="PbGlmKey" Margin="0,0,0,6"/>
-                        <TextBlock Text="GLM 模型" Margin="0,4,0,4" FontSize="12"/>
-                        <ComboBox x:Name="CbGlmModel" Margin="0,0,0,6"/>
-                        <TextBlock Text="获取 Key: 注册 https://bigmodel.cn 后在控制台创建 API Key" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                        <!-- GLM 配置 -->
+                        <Border x:Name="GlmConfigPanel" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="GLM API Key" Margin="0,12,0,4" FontSize="12"/>
+                                <PasswordBox x:Name="PbGlmKey" Margin="0,0,0,6"/>
+                                <TextBlock Text="GLM 模型" Margin="0,4,0,4" FontSize="12"/>
+                                <ComboBox x:Name="CbGlmModel" Margin="0,0,0,6"/>
+                                <TextBlock Text="获取 Key: 注册 https://bigmodel.cn 后在控制台创建 API Key" FontSize="11" Foreground="#FF909090" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
 
-                        <TextBlock Text="通义 API Key" Margin="0,12,0,4" FontSize="12"/>
-                        <PasswordBox x:Name="PbQwenKey" Margin="0,0,0,6"/>
-                        <TextBlock Text="通义 模型" Margin="0,4,0,4" FontSize="12"/>
-                        <ComboBox x:Name="CbQwenModel" Margin="0,0,0,6"/>
-                        <TextBlock Text="获取 Key: 注册 https://dashscope.aliyun.com 后在控制台创建 API Key" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                        <!-- 通义配置 -->
+                        <Border x:Name="QwenConfigPanel" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="通义 API Key" Margin="0,12,0,4" FontSize="12"/>
+                                <PasswordBox x:Name="PbQwenKey" Margin="0,0,0,6"/>
+                                <TextBlock Text="通义 模型" Margin="0,4,0,4" FontSize="12"/>
+                                <ComboBox x:Name="CbQwenModel" Margin="0,0,0,6"/>
+                                <TextBlock Text="获取 Key: 注册 https://dashscope.aliyun.com 后在控制台创建 API Key" FontSize="11" Foreground="#FF909090" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
 
-                        <TextBlock Text="DeepSeek Token（authorization，去掉 Bearer 前缀）" Margin="0,12,0,4" FontSize="12"/>
-                        <PasswordBox x:Name="PbDeepSeekToken" Margin="0,0,0,6"/>
-                        <TextBlock Text="DeepSeek Cookie（整行）" Margin="0,4,0,4" FontSize="12"/>
-                        <TextBox x:Name="TxtDeepSeekCookie" Margin="0,0,0,6" AcceptsReturn="True" TextWrapping="Wrap" Height="50" VerticalScrollBarVisibility="Auto" FontSize="11"/>
-                        <CheckBox x:Name="ChkDsThinking" Content="启用思考模式（显示思考过程，但等待时间更长）" Margin="0,2,0,2" FontSize="11" Foreground="Gray"/>
-                        <TextBlock Text="获取方式：浏览器登录 chat.deepseek.com → F12 → Network → 点任意 api/v0 请求 → Headers → 复制 authorization(去 Bearer ) 与 cookie 整行。Token 过期需重新复制。本功能依赖本机 Node.js（用于 PoW 求解）。" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                        <!-- DeepSeek 配置 -->
+                        <Border x:Name="DsConfigPanel" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="DeepSeek Token（authorization，去掉 Bearer 前缀）" Margin="0,12,0,4" FontSize="12"/>
+                                <PasswordBox x:Name="PbDeepSeekToken" Margin="0,0,0,6"/>
+                                <TextBlock Text="DeepSeek Cookie（整行）" Margin="0,4,0,4" FontSize="12"/>
+                                <TextBox x:Name="TxtDeepSeekCookie" Margin="0,0,0,6" AcceptsReturn="True" TextWrapping="Wrap" Height="50" VerticalScrollBarVisibility="Auto" FontSize="11"/>
+                                <CheckBox x:Name="ChkDsThinking" Content="启用思考模式（显示思考过程，但等待时间更长）" Margin="0,2,0,2" FontSize="11" Foreground="#FF909090"/>
+                                <TextBlock Text="获取方式：浏览器登录 chat.deepseek.com → F12 → Network → 点任意 api/v0 请求 → Headers → 复制 authorization(去 Bearer ) 与 cookie 整行。Token 过期需重新复制。本功能依赖本机 Node.js（用于 PoW 求解）。" FontSize="11" Foreground="#FF909090" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- 语音控制 -->
+                <Border Background="#FF1E1E30" CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="语音控制（实验性）" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
+                        <CheckBox x:Name="ChkVoiceControl" Content="启用语音指令" Margin="0,0,0,4" FontSize="12"
+                                  Checked="ChkVoiceControl_Changed" Unchecked="ChkVoiceControl_Changed"/>
+                        <TextBlock x:Name="TxtVoiceStatus" Text="" FontSize="11" Foreground="#FF909090" Margin="0,2,0,4" TextWrapping="Wrap"/>
+                        <Grid Margin="0,2,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="BtnOpenSpeechSettings" Grid.Column="0" Content="🛠 打开 Windows 语音设置"
+                                    Padding="10,4" Click="BtnOpenSpeechSettings_Click" Margin="0,0,6,0"
+                                    ToolTip="在 Windows 设置中安装中文语音包 / 检查麦克风权限"/>
+                            <Button x:Name="BtnTestMic" Grid.Column="1" Content="🎤 测试麦克风"
+                                    Padding="10,4" Click="BtnTestMic_Click"
+                                    ToolTip="测试是否能识别中文语音，能识别会显示识别到的文字"/>
+                        </Grid>
+                        <TextBlock x:Name="TxtVoiceTestResult" Text="" FontSize="11" Foreground="#FF909090" Margin="0,2,0,4" TextWrapping="Wrap"/>
+                        <TextBlock Text="置信度阈值（越高越严格，降低误识别）" FontSize="11" Margin="0,4,0,2"/>
+                        <Slider x:Name="SldVoiceThreshold" Minimum="0.3" Maximum="0.9" Value="0.5"
+                                TickFrequency="0.1" IsSnapToTickEnabled="True" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="TxtThresholdLabel" Text="0.5" FontSize="11" Foreground="#FF909090" HorizontalAlignment="Right" Margin="0,0,0,4"/>
+                        <TextBlock Text="支持指令：截图/截小地图、分析、清空、自动模式/手动模式、精简模式/完整模式、详细/简略（展开收起分析）、复制、设置" FontSize="11" Foreground="#FF909090" TextWrapping="Wrap" Margin="0,2,0,4"/>
+                        <TextBlock Text="使用 Windows 内置中文语音识别（zh-CN），需安装中文语音包。离线运行，数据不出本机。" FontSize="11" Foreground="#FF909090" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 战力悬浮窗 -->
+                <Border Background="#FF1E1E30" CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="战力对比悬浮窗" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
+                        <CheckBox x:Name="ChkPowerOverlay" Content="启用战力悬浮窗（开局自动显示双方战力对比）" Margin="0,0,0,4" FontSize="12"/>
+                        <TextBlock Text="检测到新对局后自动查询双方玩家战绩（PR/胜率），小窗显示我方 vs 敌方战力总和。单击展开每个玩家明细，右键隐藏，按住可拖拽到游戏任意位置。" FontSize="11" Foreground="#FF909090" TextWrapping="Wrap" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>
 
                 <!-- 战舰数据 -->
-                <Border Background="White" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+                <Border Background="#FF1E1E30" CornerRadius="6" Padding="12" Margin="0,0,0,10">
                     <StackPanel>
                         <TextBlock Text="战舰知识库" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
                         <TextBlock Text="战舰数据 JSON 路径" FontSize="12" Margin="0,0,0,4"/>
@@ -55,7 +225,7 @@
                             <TextBox x:Name="TxtShipDataPath" Grid.Column="0" Margin="0,0,6,0"/>
                             <Button x:Name="BtnBrowse" Grid.Column="1" Content="浏览..." Padding="12,4" Click="BtnBrowse_Click"/>
                         </Grid>
-                        <TextBlock x:Name="TxtShipCount" Text="" FontSize="11" Foreground="Gray" Margin="0,4,0,0"/>
+                        <TextBlock x:Name="TxtShipCount" Text="" FontSize="11" Foreground="#FF909090" Margin="0,4,0,0"/>
                         <Button x:Name="BtnReload" Content="重新加载知识库" Padding="12,4" Margin="0,8,0,0" HorizontalAlignment="Left" Click="BtnReload_Click"/>
 
                         <TextBlock Text="游戏目录（用于自动检测阵容）" Margin="0,12,0,4" FontSize="12"/>
@@ -64,36 +234,41 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <TextBox x:Name="TxtGamePath" Grid.Column="0" Margin="0,0,6,0"/>
-                            <Button x:Name="BtnBrowseGame" Grid.Column="1" Content="自动检测" Padding="12,4" Click="BtnBrowseGame_Click" Margin="0,0,4,0"/>
-                            <Button x:Name="BtnVerifyGame" Grid.Column="2" Content="验证" Padding="12,4" Click="BtnVerifyGame_Click"/>
+                            <Button x:Name="BtnBrowseGameFolder" Grid.Column="1" Content="📂 浏览" Padding="12,4" Click="BtnBrowseGameFolder_Click" Margin="0,0,4,0" ToolTip="弹出文件夹选择对话框直接定位，避免手动输入出错"/>
+                            <Button x:Name="BtnBrowseGame" Grid.Column="2" Content="自动检测" Padding="12,4" Click="BtnBrowseGame_Click" Margin="0,0,4,0"/>
+                            <Button x:Name="BtnVerifyGame" Grid.Column="3" Content="验证" Padding="12,4" Click="BtnVerifyGame_Click"/>
                         </Grid>
                         <TextBlock x:Name="TxtGamePathStatus" Text="" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
-                        <TextBlock Text="填入游戏根目录（如 C:\Games\World_of_Warships_CN），程序自动读取 replays 文件夹中的对局数据。" FontSize="11" Foreground="Gray" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        <TextBlock Text="填入游戏根目录（如 C:\Games\World_of_Warships_CN），程序自动读取 replays 文件夹中的对局数据。" FontSize="11" Foreground="#FF909090" TextWrapping="Wrap" Margin="0,4,0,0"/>
 
                         <TextBlock Text="战绩查询 API" Margin="0,12,0,4" FontSize="12"/>
                         <ComboBox x:Name="CbApiBackend" Margin="0,0,0,6"/>
-                        <TextBlock Text="Shinoaki(默认)=wows.mgaia.top 后端；WG Public=官方API；Vortex=第三方支持全服。国服推荐Shinoaki。" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                        <TextBlock Text="Shinoaki(默认)=wows.mgaia.top 后端；WG Public=官方API；Vortex=第三方支持全服。国服推荐Shinoaki。" FontSize="11" Foreground="#FF909090" TextWrapping="Wrap"/>
 
                         <TextBlock Text="游戏服务器" Margin="0,12,0,4" FontSize="12"/>
                         <ComboBox x:Name="CbServer" Margin="0,0,0,6"/>
-                        <TextBlock Text="用于战绩查询。选 cn(国服)。自动检测模式下会从游戏日志自动识别。" FontSize="11" Foreground="Gray" TextWrapping="Wrap"/>
+                        <TextBlock Text="用于战绩查询。选 cn(国服)。自动检测模式下会从游戏日志自动识别。" FontSize="11" Foreground="#FF909090" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                        <Button x:Name="BtnTestApi" Content="🔍 测试 API 连接" Padding="10,4" HorizontalAlignment="Left"
+                                Click="BtnTestApi_Click"/>
+                        <TextBlock x:Name="TxtApiTestResult" Text="" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
 
                 <!-- 小地图区域 -->
-                <Border Background="White" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+                <Border Background="#FF1E1E30" CornerRadius="6" Padding="12" Margin="0,0,0,10">
                     <StackPanel>
                         <TextBlock Text="小地图区域" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
-                        <TextBlock x:Name="TxtRegion" Text="未设置" FontSize="12" Foreground="Gray" Margin="0,0,0,8"/>
+                        <TextBlock x:Name="TxtRegion" Text="未设置" FontSize="12" Foreground="#FF909090" Margin="0,0,0,8"/>
                         <Button x:Name="BtnSelectRegion" Content="框选小地图位置" Padding="12,4" HorizontalAlignment="Left" Click="BtnSelectRegion_Click"/>
-                        <TextBlock Text="提示：框选一次后自动保存，回到主界面即可一键截取，无需重复框选。" FontSize="11" Foreground="Gray" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                        <TextBlock Text="提示：框选一次后自动保存，回到主界面即可一键截取，无需重复框选。" FontSize="11" Foreground="#FF909090" Margin="0,6,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
 
                 <!-- 系统提示词 -->
-                <Border Background="White" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+                <Border Background="#FF1E1E30" CornerRadius="6" Padding="12" Margin="0,0,0,10">
                     <StackPanel>
                         <TextBlock Text="自定义系统提示词（可选，留空用默认）" FontWeight="Bold" FontSize="14" Margin="0,0,0,8"/>
                         <TextBox x:Name="TxtSystemPrompt" AcceptsReturn="True" TextWrapping="Wrap" Height="100"
@@ -102,7 +277,7 @@
                 </Border>
 
                 <!-- 日志 -->
-                <Border Background="White" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+                <Border Background="#FF1E1E30" CornerRadius="6" Padding="12" Margin="0,0,0,10">
                     <StackPanel>
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -118,7 +293,7 @@
                         </Grid>
                         <TextBox x:Name="TxtLogViewer" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
                                  Height="120" VerticalScrollBarVisibility="Auto" FontSize="10"
-                                 FontFamily="Consolas" Background="#FFF5F5F5" Margin="0,6,0,0"/>
+                                 FontFamily="Consolas" Background="#FF0D1117" Foreground="#FFCCCCCC" Margin="0,6,0,0"/>
                         <Button x:Name="BtnRefreshLog" Content="刷新日志" Padding="10,3" Margin="0,6,0,0"
                                 HorizontalAlignment="Left" Click="BtnRefreshLog_Click"/>
                     </StackPanel>
@@ -127,10 +302,12 @@
             </StackPanel>
         </ScrollViewer>
 
-        <Border Grid.Row="1" Background="White" Padding="16,10">
+        <Border Grid.Row="1" Background="#FF1E1E30" Padding="16,10">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="BtnCancel" Content="取消" Padding="20,6" Margin="0,0,8,0" Click="BtnCancel_Click"/>
-                <Button x:Name="BtnSave" Content="保存" Padding="20,6" IsDefault="True" Click="BtnSave_Click"/>
+                <Button x:Name="BtnCancel" Content="取消" Padding="18,7" Margin="0,0,10,0"
+                        Background="#FF3A3B55" Foreground="White" Click="BtnCancel_Click"/>
+                <Button x:Name="BtnSave" Content="保存" Padding="18,7" IsDefault="True"
+                        Background="#FF4FC3F7" Foreground="#FF0D1117" Click="BtnSave_Click"/>
             </StackPanel>
         </Border>
     </Grid>

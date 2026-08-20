@@ -34,9 +34,9 @@ public static class SettingsStore
                 if (s != null) return s;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // 配置损坏时回退默认值
+            AppLog.Warn($"配置加载失败，使用默认值: {ex.Message}");
         }
         return new AppSettings();
     }
@@ -49,9 +49,9 @@ public static class SettingsStore
             var json = JsonSerializer.Serialize(settings, JsonOpts);
             File.WriteAllText(FilePath, json);
         }
-        catch
+        catch (Exception ex)
         {
-            // 保存失败不阻断主流程
+            AppLog.Warn($"配置保存失败: {ex.Message}");
         }
     }
 

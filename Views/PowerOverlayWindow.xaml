@@ -1,0 +1,70 @@
+<Window x:Class="WoWSBattleAssistant.Views.PowerOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="战力对比"
+        Width="300" Height="64"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        ResizeMode="NoResize"
+        Topmost="True"
+        ShowInTaskbar="False"
+        Background="Transparent"
+        ShowActivated="False"
+        WindowStartupLocation="Manual">
+
+    <Border x:Name="RootBorder" Background="#E610121C" BorderBrush="#FF4FC3F7"
+            BorderThickness="1" CornerRadius="8">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 收起态：双方战力总和对比 -->
+            <Grid x:Name="SummaryPanel" Grid.Row="0" Margin="8,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                    <TextBlock x:Name="TxtTeam1Score" Text="—" Foreground="#FF7EB8FF" FontSize="17" FontWeight="Bold"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="TxtTeam1Name" Text="我方" Foreground="#FF9AA0B4" FontSize="10"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="VS" Foreground="#FF4FC3F7" FontSize="14" FontWeight="Bold"
+                           VerticalAlignment="Center" Margin="10,0"/>
+                <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                    <TextBlock x:Name="TxtTeam2Score" Text="—" Foreground="#FFFF7E7E" FontSize="17" FontWeight="Bold"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="TxtTeam2Name" Text="敌方" Foreground="#FF9AA0B4" FontSize="10"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- 展开态：双方玩家明细 -->
+            <Grid x:Name="DetailPanel" Grid.Row="1" Visibility="Collapsed" Height="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0" Margin="0,0,0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="▲ 单击收起 · 右键隐藏 · 按住可拖拽" Foreground="#FF666C80" FontSize="9"
+                               VerticalAlignment="Center"/>
+                    <Button x:Name="BtnCopyEnemy" Grid.Column="1" Content="📋 复制敌方战力"
+                            FontSize="10" FontWeight="Bold" Padding="8,3"
+                            Background="#FF4FC3F7" Foreground="#FF0D1117"
+                            BorderThickness="0" Cursor="Hand" Click="BtnCopyEnemy_Click"/>
+                </Grid>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="250">
+                    <StackPanel x:Name="PlayerListPanel" Margin="8,0,8,8"/>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

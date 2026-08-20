@@ -30,8 +30,8 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
     private const string BaseHost = "https://chat.deepseek.com";
     private const string UserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0";
-    private const string SecChUa = "\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"150\", \"Microsoft Edge\";v=\"150\"";
+        "Chrome/151.0.0.0 Safari/537.36 Edg/151.0.0.0";
+    private const string SecChUa = "\"Not=A?Brand\";v=\"99\", \"Microsoft Edge\";v=\"151\", \"Chromium\";v=\"151\"";
 
     private static readonly int TzOffset =
         (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow).TotalSeconds;
@@ -74,6 +74,27 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         {
             EnsureToken();
 
+            // ===== 追问模式 =====
+            // 不再依赖 DeepSeekSessionId（从未赋值导致追问永远新开对话），
+            // 改为把历史对话重构成文本，带上追问附带的新截图，走正常视觉流程。
+            if (!string.IsNullOrWhiteSpace(request.FollowUpQuestion) && request.Conversation != null)
+            {
+                var ctx = request.Conversation;
+                var followUpPrompt = BuildFollowUpPrompt(ctx, request.FollowUpQuestion);
+
+                var fuImages = new List<(byte[] bytes, string name)>();
+                if (!string.IsNullOrWhiteSpace(request.ImageBase64))
+                    fuImages.Add((Convert.FromBase64String(request.ImageBase64), "minimap.png"));
+
+                var fuContent = await ChatWithImagesAsync(followUpPrompt, fuImages,
+                    thinkingEnabled: false, request.OnStreamChunk, ct);
+                result.Success = true;
+                result.Content = fuContent;
+                result.Elapsed = sw.Elapsed;
+                return result;
+            }
+
+            // ===== 正常分析 =====
             if (request.MinimapImage != null && string.IsNullOrWhiteSpace(request.ImageBase64))
                 request.ImageBase64 = ScreenCaptureService.EncodeToBase64(request.MinimapImage);
             if (request.LineupImage != null && string.IsNullOrWhiteSpace(request.LineupImageBase64))
@@ -133,7 +154,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
                 thinkingEnabled: false, onChunk: null, ct);
 
             result.RawContent = content;
-            ParseLineupJson(content, result);
+            LineupParser.Parse(content, result);
             return result;
         }
         catch (OperationCanceledException)
@@ -338,39 +359,61 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         if (!string.IsNullOrEmpty(cur.value) && cur.expiry > DateTime.UtcNow)
             return cur.value;
 
-        var url = $"https://hif-{kind}.deepseek.com/query";
-        var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.UserAgent.ParseAdd(UserAgent);
-        req.Headers.Accept.ParseAdd("*/*");
-        req.Headers.TryAddWithoutValidation("sec-ch-ua", SecChUa);
-        req.Headers.TryAddWithoutValidation("sec-ch-ua-mobile", "?0");
-        req.Headers.TryAddWithoutValidation("sec-ch-ua-platform", "\"Windows\"");
-        req.Headers.Referrer = new Uri("https://chat.deepseek.com/");
-        req.Headers.Add("Origin", "https://chat.deepseek.com");
-
-        using var resp = await Http.SendAsync(req, ct);
-        if (!resp.IsSuccessStatusCode)
-            throw new InvalidOperationException($"获取 hif-{kind} 失败: {resp.StatusCode}");
-        var json = await resp.Content.ReadAsStringAsync(ct);
-        var node = JsonNode.Parse(json);
-        var value = node?["data"]?["biz_data"]?["value"]?.ToString()
-            ?? throw new InvalidOperationException($"hif-{kind} 响应缺少 value。");
-
-        // 默认 600s,留 30s 余量提前刷新
-        var ttl = 600;
-        if (resp.Headers.TryGetValues("x-hif-ttl", out var ttls))
+        // 最多重试 2 次（共 3 次尝试），兜底异常统一包装为友好提示
+        Exception? lastEx = null;
+        for (int attempt = 0; attempt < 3; attempt++)
         {
-            var first = ttls.FirstOrDefault();
-            if (first != null && int.TryParse(first, out var t) && t > 0) ttl = t;
-        }
-        var expiry = DateTime.UtcNow + TimeSpan.FromSeconds(Math.Max(30, ttl - 30));
+            try
+            {
+                var url = $"https://hif-{kind}.deepseek.com/query";
+                var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.UserAgent.ParseAdd(UserAgent);
+                req.Headers.Accept.ParseAdd("*/*");
+                req.Headers.TryAddWithoutValidation("sec-ch-ua", SecChUa);
+                req.Headers.TryAddWithoutValidation("sec-ch-ua-mobile", "?0");
+                req.Headers.TryAddWithoutValidation("sec-ch-ua-platform", "\"Windows\"");
+                req.Headers.Referrer = new Uri("https://chat.deepseek.com/");
+                req.Headers.Add("Origin", "https://chat.deepseek.com");
 
-        lock (HifLock)
-        {
-            if (kind == "dliq") _hifDliq = (value, expiry);
-            else _hifLeim = (value, expiry);
+                using var resp = await Http.SendAsync(req, ct);
+                if (!resp.IsSuccessStatusCode)
+                    throw new InvalidOperationException($"获取 hif-{kind} 失败: {resp.StatusCode}");
+                var json = await resp.Content.ReadAsStringAsync(ct);
+                var node = JsonNode.Parse(json);
+                var value = node?["data"]?["biz_data"]?["value"]?.ToString()
+                    ?? throw new InvalidOperationException($"hif-{kind} 响应缺少 value。");
+
+                var ttl = 600;
+                if (resp.Headers.TryGetValues("x-hif-ttl", out var ttls))
+                {
+                    var first = ttls.FirstOrDefault();
+                    if (first != null && int.TryParse(first, out var t) && t > 0) ttl = t;
+                }
+                var expiry = DateTime.UtcNow + TimeSpan.FromSeconds(Math.Max(30, ttl - 30));
+
+                lock (HifLock)
+                {
+                    if (kind == "dliq") _hifDliq = (value, expiry);
+                    else _hifLeim = (value, expiry);
+                }
+                return value;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lastEx = ex;
+                if (attempt < 2)
+                {
+                    AppLog.Warn($"hif-{kind} 第{attempt+1}次失败: {ex.Message}，2秒后重试");
+                    await Task.Delay(2000, ct);
+                }
+            }
         }
-        return value;
+
+        // DNS / 网络异常包装为友好提示，避免用户看到原始 SocketException
+        throw new InvalidOperationException(
+            $"无法获取 DeepSeek 验证令牌(hif-{kind})：网络或 DNS 异常。\n" +
+            $"可能原因：deepseek.com 被 DNS 屏蔽 / 验证服务器域名(hif-{kind}.deepseek.com)不可达 / 网络受限。\n" +
+            $"建议：设置 → 切换 AI 提供方到【智谱 GLM】或【通义千问】（国内直连更稳定）。");
     }
 
     // ===== SSE 解析 =====
@@ -556,6 +599,13 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         if (code != 0)
         {
             var msg = node["msg"]?.ToString() ?? node["data"]?["biz_msg"]?.ToString() ?? "";
+            // 40003 = Token 无效或过期，给出明确指引
+            if (code == 40003)
+            {
+                throw new InvalidOperationException(
+                    $"DeepSeek 授权失败：Token 无效或已过期。\n" +
+                    $"请重新获取 Token：浏览器登录 chat.deepseek.com → F12 → 应用/Application → 本地存储 → 复制 userToken → 粘贴到软件设置。");
+            }
             throw new InvalidOperationException($"{req.RequestUri?.AbsolutePath} 业务失败 code={code}: {msg}");
         }
         return node;
@@ -564,41 +614,104 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
     private void EnsureToken()
     {
         if (string.IsNullOrWhiteSpace(_token))
-            throw new InvalidOperationException("未配置 DeepSeek Token,请在设置中填写。");
+            throw new InvalidOperationException(
+                "未配置 DeepSeek Token，请在设置中填写。\n" +
+                "获取方法：浏览器登录 chat.deepseek.com → F12 开发者工具 → 应用/Application → 本地存储/Local Storage → 复制 userToken 值。");
+    }
+
+    /// <summary>尝试用 Cookie 从 /api/v0/users/current 自动获取 Token。</summary>
+    public static async Task<string?> TryFetchTokenAsync(string cookie, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(cookie)) return null;
+        try
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, $"{BaseHost}/api/v0/users/current");
+            req.Headers.Accept.ParseAdd("*/*");
+            req.Headers.AcceptLanguage.ParseAdd("zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6");
+            req.Headers.TryAddWithoutValidation("Cookie", cookie);
+            req.Headers.UserAgent.ParseAdd(UserAgent);
+            req.Headers.TryAddWithoutValidation("sec-ch-ua", SecChUa);
+            req.Headers.TryAddWithoutValidation("sec-ch-ua-mobile", "?0");
+            req.Headers.TryAddWithoutValidation("sec-ch-ua-platform", "\"Windows\"");
+            req.Headers.TryAddWithoutValidation("sec-fetch-dest", "empty");
+            req.Headers.TryAddWithoutValidation("sec-fetch-mode", "cors");
+            req.Headers.TryAddWithoutValidation("sec-fetch-site", "same-origin");
+            req.Headers.Add("Origin", "https://chat.deepseek.com");
+            req.Headers.Referrer = new Uri("https://chat.deepseek.com/");
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+            using var resp = await Http.SendAsync(req, cts.Token);
+            if (!resp.IsSuccessStatusCode) return null;
+
+            var text = await resp.Content.ReadAsStringAsync(cts.Token);
+            var node = JsonNode.Parse(text);
+            if (node?["code"]?.GetValue<int>() != 0) return null;
+            return node["data"]?["biz_data"]?["token"]?.ToString();
+        }
+        catch { return null; }
     }
 
     // ===== 提示词(与 OpenAICompatibleAnalyzer 保持一致) =====
 
     private const string DefaultSystemPrompt =
         """
-        你是《战舰世界》(World of Warships) 资深战术助手，擅长结合阵容数据、小地图、战舰参数和玩家战绩做局势判断与威胁评估。
+        你是《战舰世界》(World of Warships) 资深战术助手，擅长结合阵容面板、小地图、战舰参数和玩家战绩做局势判断与威胁评估。
 
-        【输入说明】
-        - 阵容数据：可能来自自动检测（游戏文件解析，玩家名/舰船名/阵营 100%准确）或 AI 视觉识别（仅供参考）。
-          若为自动检测数据，阵营标签 [自己]/[队友]/[敌方] 是确定可信的。
-        - 小地图截图：图例 绿色=我方舰船，红色=敌方舰船，白色箭头=用户舰船。
-        - 用户战舰名：用户自己驾驶的舰船。
-        - 本局舰船列表：所有参战舰船（不分敌我）。
-        - 战舰参数知识库：仅供内部参考，输出中不要复述、罗列参数。
-        - 玩家威胁评估清单：由联网战绩查询得到，含阵营标签、搜索结果、战绩数据。
+        【输入】
+        - 阵容面板截图：含双方"玩家名+舰船名"。请你自行看图判断敌我——用户战舰所在一方为我方（辅助判断方法提供的截图顶部会有"队友"和"敌方"两种标识：1. 只有队友：下面全是队友。2. 有敌方：下面就是敌人。"队友"是绿色衬底，"敌方"是红色衬底，在绿色和红色衬底下面，才是双方的人和战舰。），不要假设左右分布（随机/排位/行动等模式阵容面板左右不同）。
+        - 小地图截图：图例 绿色=我方舰船，红色=敌方舰船，白色箭头=用户自己的舰船。
+        - 用户战舰名 + 本局所有舰船名（扁平列表，可能含重复：双方同型舰会出现两次）。
+        - 战舰参数知识库：仅供你内部参考，输出中不要复述、罗列参数。
+        - 玩家威胁评估清单：由联网查询 shinoaki 接口得到，提供每个玩家的搜索结果（命中/未命中）、玩家名是否含冒号、以及命中玩家的 PR/胜率/场均伤害/场均击杀/KD 等战绩。清单不做人机判定，需要你综合判断。
+
+        【小地图坐标系统】
+        小地图是海面俯视图，被分割成 10×10 共 100 个格子：
+        - 横坐标（x）（字母）：从左到右依次 A、B、C、D、E、F、G、H、I、J。
+        - 纵坐标（y）（数字）：从上到下依次 1、2、3、4、5、6、7、8、9、10（图上标为一、二、三、四、五、六、七、八、九、十）。
+        - 坐标 = 字母 + 数字：最左上角 = A1，最右下角 = J10。
+        - 描述位置/走位时用坐标（如 C5、H7），不要用"左上角""中间偏右"等模糊说法。
 
         【严禁编造——最重要】
-        - 战舰参数必须且只能来自知识库文本。禁止凭印象给出数字。
-        - 【消耗品一律禁提】知识库不包含消耗品数据。
-        - 若某舰不在知识库中，明确说"参数未知"。
+        - 战舰参数（射程、隐蔽、伤害、航速、装甲等）必须且只能来自上方知识库文本。任何具体数值（如"射程18.6km""隐蔽5.8km""装填30秒"）必须能在知识库文本中找到出处，禁止凭印象或常识给出数字。
+        - 知识库未列出的项目，视为该舰"未提供/未知"，绝不可凭印象或常识编造。
+        - 【消耗品一律禁提】战舰知识库根本不包含消耗品数据（烟幕/引擎增压/雷达/水听/维修/发烟机/加速等），你没有任何依据判断某舰是否有某消耗品。一律当作"未知"：
+          · 严禁在输出中提到任何消耗品名称
+          · 严禁基于消耗品做战术建议（如"等他雷达结束再上""躲烟幕后""对水听范围外机动"）
+          · 改用基于舰船参数的描述代替（如"利用岛屿掩护接近""保持在隐蔽距离外""利用高航速转场"）
+          · 搞错消耗品会导致严重误判，这条是硬禁区
+        - 若某舰不在知识库中，明确说"参数未知"，不要编造任何数值。
 
         【关键判断规则】
-        1. 人机 vs 真人——综合名字特征+战绩搜索命中判断。
-        2. 威胁评估：以战绩数据为依据，结合舰船性能判断。
-        3. 优先目标：综合战绩威胁度+舰船性能+是否真人确定。
+        1. 人机 vs 真人——由你综合以下三个信号判断，不要单凭任何一个信号下定论：
+           信号一·名字是否含冒号":"：人机玩家名通常带冒号（如 ":AI:xxx"），真人玩家名一般不带。但极少数真人名字也可能带冒号，不能单凭冒号定人机。
+           信号二·英文字母组合是否像人机：人机玩家的名字通常是无规律的英文字母组合（如 "BtrkXz"、"qwRfm"），而真人玩家的英文名通常有意义（单词、缩写或混拼）。中文名、带[军团]标签的名、"用户_数字"格式的名都是真人。
+           信号三·shinoaki 搜索是否命中：清单中标注了每个玩家"shinoaki搜索命中"或"shinoaki搜索未命中"。搜索命中=该玩家在战绩网站有记录，几乎可以确定是真人。搜索未命中可能是人机，但也可能是真人（名字识别有偏差、玩家未注册战绩等），需要结合信号一和信号二综合判断。
+           综合规则：
+           · 搜索命中 → 确定真人，可直接使用其战绩数据
+           · 搜索未命中 + 名字含冒号 + 字母组合无规律 → 判定为人机
+           · 搜索未命中 + 名字含中文/军团标签/用户_数字 → 判定为真人（搜索未命中可能是名字识别偏差）
+           · 搜索未命中 + 英文名但像有意义的单词 → 倾向真人但标注"疑似"
+           · 搜索未命中 + 英文名且无规律 + 不含冒号 → 倾向人机但标注"疑似"
+        2. 威胁评估：对判定为真人的玩家，以清单中战绩数据为依据——PR 值越高越强（参考：<900 较弱, 900-1450 中等, 1450-2100 很好, >2100 优秀），胜率与场均伤害反映玩家水平与战舰发挥。结合舰船性能综合判断哪几个真人最凶、最可能带节奏。人机玩家普遍威胁较低，但所驾舰船性能仍要考虑（如人机开 BB 仍有火力威胁）。
+        3. 优先目标：综合"玩家战绩威胁度""舰船性能威胁""是否真人"确定本局应优先处理的目标。
+        4. 若清单缺失或某玩家战绩查询失败（查询失败会在清单中标注），仅凭信号一和信号二判断，且必须明确标注"疑似"而非断言。
 
-        【输出】四部分，中文，分点，简洁：
-        1.【怎么玩这艘船】针对用户战舰给出打法要点。
-        2.【敌方威胁评估】点明敌军人机/真人数量与威胁排序。
-        3.【优先攻击目标】具体舰船+理由+克制手段。
-        4.【整局局势与策略】结合小地图给出整体走向。
+        【容错】
+        - 小地图上可能没有敌方舰船（开局对面未点亮）：此时威胁与策略基于阵容和参数推断，不要编造敌方位置。
+        - 双方可能出现同型舰：靠阵容图中的阵营归属区分，不要混淆敌我同型舰。
+        - 若阵容图里某些信息看不清，按能看清的部分判断，不要瞎编。
 
-        所有建议必须落到本局具体舰船和位置上，禁止通用套话。
+        【输出】直接给以下四部分，中文，分点，简洁。可引用具体数值（如"隐蔽5.8km""主炮射程18km"）但不要整段抄参数，不要废话套话：
+        1.【怎么玩这艘船】针对用户战舰，结合其参数特性给出本局打法要点：接敌距离、走位思路、应避免的对抗等。注意：不要提任何消耗品（知识库无此数据），改用基于舰船参数的描述。
+        2.【敌方威胁评估】
+           - 先点明敌方有几艘是人机、几艘是真人（由你根据上述三条规则综合判断，并简要说明判断依据）。
+           - 对真人玩家，结合其战绩（PR/胜率/场均伤害）与所驾舰船判断谁最凶、最可能带节奏，说明理由。
+           - 结合舰船性能（主炮口径/射程/隐蔽/鱼雷/机动/防空）说明每个重点目标的威胁点。
+        3.【优先攻击目标】明确给出本局建议优先处理的目标（具体舰船+是否真人），一句话理由+克制手段。
+        4.【整局局势与策略】结合小地图双方位置分布（若有红色敌舰）给出整体走向与关键决策（推进/转场/控点/视野/集火）。若敌方未点亮，给出开局预案。
+
+        所有建议必须落到本局具体舰船和位置上，禁止与局势无关的通用套话。
         """;
 
     private const string RecognitionSystemPrompt =
@@ -610,10 +723,10 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         - 左侧标题是"队友"（绿色衬底/背景），下面是友方所有舰船
         - 右侧标题是"敌方"（红色衬底/背景），下面是敌方所有舰船
         每一行（无论左边还是右边）的结构完全相同，从左到右依次为：
-        [玩家昵称] [飞船图标] [等级 舰船型号名]
+        [玩家昵称] [舰船图标] [等级 舰船型号名]
         其中：
         - 玩家昵称可能带 [军团] 标签，如 "[北洋狮]xxx"，必须完整提取（方括号+军团名+昵称）
-        - 飞船图标不用管
+        - 舰船图标不用管
         - "等级 舰船型号名" 由【罗马数字等级前缀 + 空格 + 舰船名】组成，如 "X 大选帝侯"、"VII 沙恩霍斯特"
         注意：等级前缀永远在舰船名前面，中间用空格分隔，例如 "X 鲸" 是一个完整的舰船名，绝不能拆成 "X" 和 "鲸" 两个。
 
@@ -651,7 +764,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         if (req.LineupFromAutoDetect)
         {
             sb.AppendLine("分析本局。阵营数据由游戏内部文件精确解析，无需验证。");
-            sb.AppendLine("图片：小地图截图（绿=我方，红=敌方，白箭头=用户自己）");
+            sb.AppendLine("图片：两张截图——1) 阵容面板 2) 小地图（绿=我方，红=敌方，白箭头=用户自己）");
         }
         else
         {
@@ -678,51 +791,54 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         return sb.ToString();
     }
 
-    /// <summary>从 AI 返回文本中提取配对列表(优先)或扁平舰船名列表(兼容)。</summary>
-    private static void ParseLineupJson(string content, ShipRecognitionResult result)
+    /// <summary>把历史对话重构成文本，供 DeepSeek 追问时保留上下文。</summary>
+    private static string BuildFollowUpPrompt(ConversationContext ctx, string question)
     {
-        var text = content.Trim();
-        var fenceMatch = Regex.Match(text, @"```(?:json)?\s*([\s\S]*?)\s*```", RegexOptions.IgnoreCase);
-        if (fenceMatch.Success) text = fenceMatch.Groups[1].Value.Trim();
-
-        var first = text.IndexOf('{');
-        var last = text.LastIndexOf('}');
-        if (first >= 0 && last > first)
-            text = text.Substring(first, last - first + 1);
-
-        try
+        var sb = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(ctx.SystemPrompt))
         {
-            var node = JsonNode.Parse(text);
-
-            // 优先解析配对结构
-            if (node?["pairs"] is JsonArray pairs)
-            {
-                foreach (var p in pairs)
-                {
-                    if (p is not JsonObject po) continue;
-                    var player = po["player"]?.ToString()?.Trim() ?? "";
-                    var ship = po["ship"]?.ToString()?.Trim() ?? "";
-                    if (string.IsNullOrEmpty(ship)) continue;
-                    result.PlayerShipPairs.Add(new PlayerShipPair { Player = player, Ship = ship });
-                    result.Ships.Add(ship);
-                }
-            }
-
-            // 兼容旧格式：ships 扁平列表
-            if (result.Ships.Count == 0 && node?["ships"] is JsonArray arr)
-            {
-                result.Ships = arr.Select(x => x?.ToString()?.Trim()).Where(s => !string.IsNullOrEmpty(s)).Select(s => s!).ToList();
-            }
-
-            result.Success = result.Ships.Count > 0;
-            if (!result.Success)
-                result.Error = "AI 未识别到任何舰船名，请重试或手动输入。";
+            sb.AppendLine(ctx.SystemPrompt);
+            sb.AppendLine();
         }
-        catch (Exception ex)
+
+        sb.AppendLine("—— 以下是本局此前的分析对话历史，请结合这些上下文回答用户的新问题 ——");
+
+        foreach (var m in ctx.Messages)
         {
-            result.Success = false;
-            result.Error = "解析 AI 返回 JSON 失败: " + ex.Message + " | 原文: " + Truncate(content, 300);
+            string role, text;
+            try
+            {
+                var node = JsonSerializer.SerializeToNode(m);
+                role = node?["role"]?.ToString() ?? "";
+                text = ExtractText(node?["content"]);
+            }
+            catch { continue; }
+
+            if (string.IsNullOrWhiteSpace(text)) continue;
+            if (role == "system") continue;
+            sb.AppendLine(role == "assistant" ? $"助手：{text}" : $"用户：{text}");
+            sb.AppendLine();
         }
+
+        sb.AppendLine("—— 用户的新问题（直接回答，不要重复之前的分析，聚焦问题本身）——");
+        sb.AppendLine(question);
+        return sb.ToString();
+    }
+
+    /// <summary>从 content 节点提取纯文本（content 可能是字符串，也可能是 image_url+text 数组）。</summary>
+    private static string ExtractText(System.Text.Json.Nodes.JsonNode? contentNode)
+    {
+        if (contentNode == null) return "";
+        if (contentNode is System.Text.Json.Nodes.JsonValue jv) return jv.ToString();
+        if (contentNode is System.Text.Json.Nodes.JsonArray arr)
+        {
+            var sb = new StringBuilder();
+            foreach (var item in arr)
+                if (item?["type"]?.ToString() == "text")
+                    sb.Append(item["text"]?.ToString() ?? "");
+            return sb.ToString();
+        }
+        return contentNode.ToString();
     }
 
     private static string Truncate(string s, int n) => s.Length <= n ? s : s[..n] + "...";

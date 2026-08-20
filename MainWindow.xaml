@@ -14,9 +14,78 @@
         PreviewKeyDown="Window_PreviewKeyDown">
 
     <Window.Resources>
+        <!-- 通用按钮：现代圆角 -->
         <Style TargetType="Button">
             <Setter Property="Focusable" Value="False"/>
             <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="5"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Opacity" Value="0.85"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 标题栏圆形按钮 -->
+        <Style x:Key="TitleBarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#FFCCCCCC"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FF3A3B55"/>
+                    <Setter Property="Foreground" Value="White"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ActionButton" TargetType="Button">
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="0,9"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <Border x:Name="hoverOverlay" Background="Transparent" CornerRadius="4"/>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                  RecognizesAccessKey="True"
+                                                  TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="hoverOverlay" Property="Background" Value="#22FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="hoverOverlay" Property="Background" Value="#22000000"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Background" Value="#FFE6EDF3"/>
+                                <Setter TargetName="hoverOverlay" Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="#FF8B949E"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
         <Style TargetType="TextBox">
             <Setter Property="IsTabStop" Value="False"/>
@@ -77,9 +146,9 @@
         </Style>
     </Window.Resources>
 
-    <Border x:Name="RootBorder" Background="#EE1A1B2E" CornerRadius="10" BorderBrush="#FF4FC3F7" BorderThickness="1">
+    <Border x:Name="RootBorder" Background="#F01A1B2E" CornerRadius="12" BorderBrush="#FF2D2E44" BorderThickness="1">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.5" Color="Black"/>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.6" Color="Black"/>
         </Border.Effect>
 
         <Grid>
@@ -90,7 +159,7 @@
             </Grid.RowDefinitions>
 
             <!-- 标题栏 -->
-            <Border Grid.Row="0" Background="#FF2D2E44" CornerRadius="10,10,0,0" Padding="12,8"
+            <Border Grid.Row="0" Background="#FF222238" CornerRadius="12,12,0,0" Padding="12,8"
                     MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -98,31 +167,28 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="⚓" FontSize="18" Margin="0,0,8,0" Foreground="#FF4FC3F7"/>
-                        <TextBlock Text="战舰世界 战局分析助手" FontSize="14" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+                        <Border Background="#FF4FC3F7" CornerRadius="4" Width="6" Height="18" Margin="0,0,8,0"/>
+                        <TextBlock Text="战舰世界 战术分析" FontSize="13" FontWeight="SemiBold" Foreground="White" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <Button x:Name="BtnCollapse" Content="▲" FontSize="12" Width="32" Height="28"
-                                Background="Transparent" Foreground="White" BorderThickness="0"
+                        <Button x:Name="BtnCollapse" Content="▲" Style="{StaticResource TitleBarButton}"
                                 Click="BtnCollapse_Click" ToolTip="折叠/展开详情"/>
-                        <Button x:Name="BtnCompact" Content="🗜" FontSize="12" Width="32" Height="28"
-                                Background="Transparent" Foreground="White" BorderThickness="0"
+                        <Button x:Name="BtnCompact" Content="🗜" Style="{StaticResource TitleBarButton}"
                                 Click="BtnCompact_Click" ToolTip="精简模式/完整模式"/>
-                        <Button x:Name="BtnSettings" Content="⚙" FontSize="16" Width="32" Height="28"
-                                Background="Transparent" Foreground="White" BorderThickness="0"
+                        <Button x:Name="BtnOverlay" Content="⚔" Style="{StaticResource TitleBarButton}"
+                                Click="BtnOverlay_Click" ToolTip="战力悬浮窗"/>
+                        <Button x:Name="BtnSettings" Content="⚙" Style="{StaticResource TitleBarButton}"
                                 Click="BtnSettings_Click" ToolTip="设置"/>
-                        <Button x:Name="BtnMinimize" Content="—" FontSize="14" Width="32" Height="28"
-                                Background="Transparent" Foreground="White" BorderThickness="0"
+                        <Button x:Name="BtnMinimize" Content="—" Style="{StaticResource TitleBarButton}"
                                 Click="BtnMinimize_Click" ToolTip="最小化"/>
-                        <Button x:Name="BtnClose" Content="✕" FontSize="14" Width="32" Height="28"
-                                Background="Transparent" Foreground="White" BorderThickness="0"
+                        <Button x:Name="BtnClose" Content="✕" Style="{StaticResource TitleBarButton}"
                                 Click="BtnClose_Click" ToolTip="关闭"/>
                     </StackPanel>
                 </Grid>
             </Border>
 
             <!-- 模式切换栏 -->
-            <Border x:Name="ModeBar" Grid.Row="1" Background="#FF232436" Padding="8,4">
+            <Border x:Name="ModeBar" Grid.Row="1" Background="#FF1E1E30" Padding="8,5">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -149,15 +215,26 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <!-- 状态条 -->
                 <Border x:Name="StatusBar" Grid.Row="0" Background="#FF13141F" BorderBrush="#FF3A3B55" BorderThickness="1"
                         CornerRadius="4" Padding="6,3" Margin="0,0,0,6">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock x:Name="TxtModel" Text="模型: 未配置" Foreground="#FF4FC3F7" FontSize="10" Margin="0,0,10,0"/>
-                        <TextBlock x:Name="TxtStatus" Text="就绪" Foreground="#FFBDBDBD" FontSize="10" TextWrapping="Wrap"/>
-                    </StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="TxtModel" Text="模型: 未配置" Foreground="#FF4FC3F7" FontSize="10" Margin="0,0,10,0"/>
+                            <TextBlock x:Name="TxtStatus" Text="就绪" Foreground="#FFBDBDBD" FontSize="10" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <Border x:Name="VoiceIndicator" Grid.Column="1" Background="#FF2D2E44" CornerRadius="3"
+                                Padding="5,1" Visibility="Collapsed" ToolTip="语音识别状态">
+                            <TextBlock x:Name="TxtVoiceIndicator" Text="🎤 待启动" Foreground="#FFBDBDBD" FontSize="9"/>
+                        </Border>
+                    </Grid>
                 </Border>
 
                     <!-- ============ 步骤① 阵容 ============ -->
@@ -180,7 +257,7 @@
 
                             <!-- 手动模式：截图按钮（自动模式时隐藏） -->
                             <Button x:Name="BtnCaptureLineup" Content="📷 框选截取阵容"
-                                    Padding="0,8" Margin="0,0,0,6" FontSize="13" FontWeight="Bold"
+                                    Style="{StaticResource ActionButton}"
                                     Background="#FF4FC3F7" Foreground="Black" Click="BtnCaptureLineup_Click"
                                     Visibility="Collapsed"/>
 
@@ -243,7 +320,7 @@
 
                             <!-- 截取按钮（始终手动触发） -->
                             <Button x:Name="BtnCaptureMinimap" Content="🗺️ 截取小地图"
-                                    Padding="0,8" Margin="0,0,0,4" FontSize="13" FontWeight="Bold"
+                                    Style="{StaticResource ActionButton}" Margin="0,0,0,4"
                                     Background="#FFffb74D" Foreground="Black" Click="BtnCaptureMinimap_Click"/>
                             <TextBlock x:Name="TxtMinimapHint" Text="请在⚙设置中先框选小地图位置，之后每次点击此按钮即可截取"
                                        Foreground="#FFBDBDBD" FontSize="10" Margin="0,0,0,6" TextWrapping="Wrap"/>
@@ -276,9 +353,9 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <Button x:Name="BtnAnalyze" Grid.Column="0" Content="🔍 分析战局"
-                                Padding="0,10" Margin="0,0,6,0" FontSize="13" FontWeight="Bold"
+                                Style="{StaticResource ActionButton}" Margin="0,0,6,0"
                                 Background="#FF66BB6A" Foreground="Black" Click="BtnAnalyze_Click" IsEnabled="False"/>
-                        <Button x:Name="BtnClear" Grid.Column="1" Content="清空" Padding="10,10"
+                        <Button x:Name="BtnClear" Grid.Column="1" Content="清空" Padding="12,9"
                                 Background="#FF3A3B55" Foreground="White" Click="BtnClear_Click"/>
                     </Grid>
 
@@ -290,21 +367,41 @@
                         </Grid.RowDefinitions>
                         <DockPanel Grid.Row="0" Margin="0,0,0,4">
                             <TextBlock Text="分析结果" Foreground="White" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
-                            <Button x:Name="BtnCopy" Content="复制" DockPanel.Dock="Right" Padding="8,2"
-                                    Background="#FF3A3B55" Foreground="White" Click="BtnCopy_Click" Margin="8,0,0,0"/>
+                            <Button x:Name="BtnToggleDetail" Content="详细" DockPanel.Dock="Right" Padding="8,3"
+                                    Background="#FF2D2E44" Foreground="#FF4FC3F7" Click="BtnToggleDetail_Click" Margin="4,0,4,0"
+                                    Visibility="Collapsed"/>
+                            <Button x:Name="BtnCopy" Content="复制" DockPanel.Dock="Right" Padding="8,3"
+                                    Background="#FF2D2E44" Foreground="White" Click="BtnCopy_Click" Margin="4,0,0,0"/>
                         </DockPanel>
                         <Border Grid.Row="1" Background="#FF13141F" BorderBrush="#FF3A3B55" BorderThickness="1">
                             <RichTextBox x:Name="TxtResult" Background="Transparent" Foreground="#FFE0E0E0"
                                          BorderThickness="0" Padding="6" IsReadOnly="True"
                                          VerticalScrollBarVisibility="Auto"
-                                         IsDocumentEnabled="True">
+                                         IsDocumentEnabled="False">
                                 <FlowDocument PagePadding="0" FontFamily="Microsoft YaHei" FontSize="11"
                                               LineHeight="20"/>
                             </RichTextBox>
                         </Border>
                     </Grid>
 
-                    <TextBlock x:Name="TxtFooter" Grid.Row="5" Text="" Foreground="#FF6666" FontSize="9" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    <!-- 追问输入区域 -->
+                    <Border x:Name="FollowUpPanel" Grid.Row="5" Background="#FF1E1E30" CornerRadius="4"
+                            Padding="4" Margin="0,4,0,0" Visibility="Collapsed">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="TxtFollowUp" Grid.Column="0" Background="#FF13141F" Foreground="White"
+                                     BorderThickness="0" Padding="6,5" FontSize="11"
+                                     KeyDown="TxtFollowUp_KeyDown"/>
+                            <Button x:Name="BtnFollowUp" Grid.Column="1" Content="发送" Padding="12,5"
+                                    Background="#FF4FC3F7" Foreground="#FF0D1117"
+                                    Click="BtnFollowUp_Click"/>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock x:Name="TxtFooter" Grid.Row="6" Text="" Foreground="#FF6666" FontSize="9" Margin="0,2,0,0" TextWrapping="Wrap"/>
                 </Grid>
             </Grid>
         </Border>

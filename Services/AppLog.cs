@@ -30,6 +30,7 @@ public static class AppLog
     }
 
     public static void Info(string message) => Write("INFO", message);
+    public static void Debug(string message) => Write("DEBUG", message);
     public static void Warn(string message) => Write("WARN", message);
     public static void Error(string message, Exception? ex = null)
     {
@@ -76,7 +77,7 @@ public static class AppLog
             File.Copy(LogPath, filePath, overwrite: true);
             return true;
         }
-        catch { return false; }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[AppLog] Export failed: {ex.Message}"); return false; }
     }
 
     /// <summary>清空日志</summary>
@@ -86,6 +87,6 @@ public static class AppLog
         {
             lock (_lock) { File.WriteAllText(LogPath, "", Encoding.UTF8); }
         }
-        catch { }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[AppLog] Clear failed: {ex.Message}"); }
     }
 }

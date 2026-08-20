@@ -26,6 +26,13 @@ public static class DeepSeekPowSolver
     private static readonly string WasmPath = Path.Combine(CacheDir, "sha3_wasm_bg.wasm");
 
     private static int _extracted; // 0=未释放, 1=已释放
+
+    /// <summary>检查 Node.js 是否可用（不抛异常）</summary>
+    public static bool IsAvailable()
+    {
+        try { return ResolveNode() != null; }
+        catch { return false; }
+    }
     private static string? _nodeExe;
 
     /// <summary>
@@ -40,6 +47,16 @@ public static class DeepSeekPowSolver
     {
         EnsureExtracted();
         var nodeExe = ResolveNode();
+        if (nodeExe == null)
+        {
+            throw new InvalidOperationException(
+                "未找到 Node.js。DeepSeek 分析需要 Node.js(v18+) 求解 PoW 验证。\n" +
+                "请确认：\n" +
+                "  1) 已安装 Node.js 18+ LTS（https://nodejs.org 下载，安装时勾选「Add to PATH」）\n" +
+                "  2) 安装完成后重新启动本程序，让进程加载最新的 PATH\n" +
+                "  3) 若不想装 Node.js，请设置 → 切换到【智谱 GLM】或【通义千问】（国内直连）\n" +
+                "诊断：打开 cmd 输入 node --version 看是否有版本输出。");
+        }
 
         var inputObj = new { challenge, salt, difficulty, expireAt };
         var inputJson = JsonSerializer.Serialize(inputObj);
@@ -137,8 +154,8 @@ public static class DeepSeekPowSolver
         rs.CopyTo(fs);
     }
 
-    /// <summary>定位 node.exe:先 PATH,再常见安装路径。</summary>
-    private static string ResolveNode()
+    /// <summary>定位 node.exe:先 PATH,再 winget/nvm/fnm/chocolatey 路径。</summary>
+    private static string? ResolveNode()
     {
         if (_nodeExe != null) return _nodeExe;
 
@@ -146,26 +163,96 @@ public static class DeepSeekPowSolver
         var fromPath = TryFindInPath("node");
         if (fromPath != null) { _nodeExe = fromPath; return _nodeExe; }
 
-        // 2) 常见安装路径
-        string[] candidates =
+        // 2) 常见安装路径（含 winget / 官方 msi / 手动 zip）
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var roamingAppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        var programFilesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+
+        var candidates = new List<string>
         {
-            @"C:\Program Files\nodejs\node.exe",
-            @"C:\Program Files (x86)\nodejs\node.exe",
+            Path.Combine(programFiles,     @"nodejs\node.exe"),
+            Path.Combine(programFilesX86,  @"nodejs\node.exe"),
+            Path.Combine(localAppData,     @"Programs\nodejs\node.exe"),
+            Path.Combine(roamingAppData,   @"..\Local\Programs\nodejs\node.exe"),
         };
-        foreach (var c in candidates)
+
+        // Chocolatey 默认安装到 C:\tools
+        var chocolateyLib = Path.Combine(localAppData, @"..\..\tools\nodejs\node.exe");
+        if (File.Exists(chocolateyLib)) candidates.Add(Path.GetFullPath(chocolateyLib));
+
+        // fnm (Fast Node Manager) 默认 %FNM_DIR% 或 ~/.fnm
+        var fnmDir = Environment.GetEnvironmentVariable("FNM_DIR")
+                     ?? Path.Combine(roamingAppData, @"..\Local\fnm\node-versions");
+        TryAddFnmNode(candidates, fnmDir);
+
+        // Volta
+        var voltaDir = Environment.GetEnvironmentVariable("VOLTA_HOME")
+                       ?? Path.Combine(roamingAppData, @"..\Local\Volta\tools\image\node");
+        TryAddDirExe(candidates, voltaDir, "node.exe");
+
+        // 当前用户主目录扫描常见位置
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        candidates.Add(Path.Combine(home, "node.exe"));                         // 绿色版
+        candidates.Add(Path.Combine(home, "nodejs", "node.exe"));               // 手动 unzip
+
+        foreach (var c in candidates.Where(File.Exists))
         {
-            if (File.Exists(c)) { _nodeExe = c; return _nodeExe; }
+            _nodeExe = c;
+            return _nodeExe;
         }
 
-        // 3) nvm 当前版本
-        var nvmHome = Environment.GetEnvironmentVariable("NVM_HOME");
-        if (!string.IsNullOrEmpty(nvmHome))
+        // 3) NVM-Windows: 扫描 %NVM_HOME% 或默认 %APPDATA%\nvm 下 versions 目录找最新版本
+        var nvmHome = Environment.GetEnvironmentVariable("NVM_HOME")
+                      ?? Path.Combine(roamingAppData, "nvm");
+        TryAddNvmNode(candidates, nvmHome);
+
+        foreach (var c in candidates.Where(File.Exists))
         {
-            // nvm 切换版本后通常软链到 C:\Program Files\nodejs,这里不深入处理
+            _nodeExe = c;
+            return _nodeExe;
         }
 
-        throw new InvalidOperationException(
-            "未找到 Node.js。请安装 Node.js(v18+) 并确保 node 在 PATH 中,DeepSeek PoW 求解依赖它。");
+        return null; // 由外层构造友好错误消息
+    }
+
+    private static void TryAddFnmNode(List<string> candidates, string fnmDir)
+    {
+        try
+        {
+            if (!Directory.Exists(fnmDir)) return;
+            var latest = Directory.GetDirectories(fnmDir)
+                .Select(d => new { Dir = d, Name = Path.GetFileName(d) ?? "" })
+                .Where(x => x.Name.StartsWith("v", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+            if (latest != null)
+                candidates.Add(Path.Combine(latest.Dir, "installation", "node.exe"));
+        }
+        catch { /* 忽略扫描异常 */ }
+    }
+
+    private static void TryAddNvmNode(List<string> candidates, string nvmHome)
+    {
+        try
+        {
+            if (!Directory.Exists(nvmHome)) return;
+            var versionsDir = Path.Combine(nvmHome, "versions", "node");
+            if (!Directory.Exists(versionsDir)) return;
+            var latest = Directory.GetDirectories(versionsDir)
+                .Select(d => new { Dir = d, Name = Path.GetFileName(d) ?? "" })
+                .Where(x => x.Name.StartsWith("v", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+            if (latest != null)
+                candidates.Add(Path.Combine(latest.Dir, "node.exe"));
+        }
+        catch { /* 忽略 */ }
+    }
+
+    private static void TryAddDirExe(List<string> candidates, string dir, string exe)
+    {
+        try { if (Directory.Exists(dir)) candidates.Add(Path.Combine(dir, exe)); } catch { }
     }
 
     private static string? TryFindInPath(string exe)

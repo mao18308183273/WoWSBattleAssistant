@@ -27,9 +27,21 @@ public sealed class AppSettings
     /// <summary>DeepSeek 思考模式（开启=显示思考链但更慢，关闭=仅回复文本更快）</summary>
     public bool EnableDeepSeekThinking { get; set; } = true;
 
-    /// <summary>战舰数据 JSON 文件路径（945 艘船知识库）</summary>
-    public string ShipDataPath { get; set; } =
-        @"C:\Users\mao_z\Downloads\wows_ships_data_20260801_125351.json";
+    /// <summary>启用语音指令控制</summary>
+    public bool EnableVoiceControl { get; set; } = false;
+
+    /// <summary>启用双方战力对比悬浮窗（开局自动显示双方战力总和，单击展开明细）</summary>
+    public bool EnablePowerOverlay { get; set; } = false;
+
+    /// <summary>战力悬浮窗位置（逻辑像素）</summary>
+    public double OverlayLeft { get; set; } = 200;
+    public double OverlayTop { get; set; } = 200;
+
+    /// <summary>语音识别置信度阈值（0.0-1.0，越高越严格）</summary>
+    public double VoiceConfidenceThreshold { get; set; } = 0.4;
+
+    /// <summary>战舰数据 JSON 文件路径（945 艘船知识库）。安装器自动写入，也可手动修改。</summary>
+    public string ShipDataPath { get; set; } = string.Empty;
 
     /// <summary>游戏服务器（用于 shinoaki 玩家战绩查询）。cn=国服, asia=亚服, eu=欧服, na=美服, ru=俄服</summary>
     public string Server { get; set; } = "cn";
