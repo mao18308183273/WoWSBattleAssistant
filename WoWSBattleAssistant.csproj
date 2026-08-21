@@ -26,7 +26,7 @@
     <EmbeddedResource Include="Services\AI\DeepSeek\sha3_wasm_bg.wasm" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="System.Speech" Version="9.0.0" />
+    <PackageReference Include="System.Speech" Version="10.0.11" />
   </ItemGroup>
 
 </Project>

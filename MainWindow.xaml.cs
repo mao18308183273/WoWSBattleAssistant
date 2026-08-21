@@ -136,7 +136,7 @@ public partial class MainWindow : Window
         if (_settings.WindowWidth > 0) Width = _settings.WindowWidth;
         if (_settings.WindowHeight > 0) Height = _settings.WindowHeight;
 
-        AppLog.Info($"WoWS Battle Assistant V2.1 启动 | 模式: {(_isAutoMode ? "自动" : "手动")} | 游戏路径: {_settings.GamePath}");
+        AppLog.Info($"WoWS Battle Assistant V4.0.0 启动 | 模式: {(_isAutoMode ? "自动" : "手动")} | 游戏路径: {_settings.GamePath}");
 
         UpdateStatusBar();
         UpdateModeUI();
