@@ -93,11 +93,13 @@ WoWSBattleAssistant/
    - 模型可选 `qwen-vl-plus` 或 `qwen-vl-max`。
 
    **DeepSeek 视觉**（网页版逆向，非官方 API）
-   - 浏览器登录 https://chat.deepseek.com，按 F12 打开开发者工具。
-   - **Token**：Network → 任意 `/api/v0/` 请求 → Headers → `authorization: Bearer xxx`，复制 `Bearer ` 后面的部分。
-   - **Cookie**：Network → 任意请求 → Headers → `cookie:` 整行复制（含 `ds_session_id` 等）。
-   - 需额外安装 Node.js v18+。
-   - 注意：Token/Cookie 会过期，失效后需重新抓取；该方式有被风控的可能。
+   - **推荐：油猴脚本一键获取**（V4.5.0 新增）：安装 Tampermonkey 扩展，导入 Release 附带的 `DeepSeekCredentialExtractor.user.js`，浏览器登录 https://chat.deepseek.com 后点「提取凭证」按钮，一键复制 Token + Cookie。
+   - **手动获取**：浏览器登录 https://chat.deepseek.com，按 F12 打开开发者工具。
+     - **Token**：Network → 任意 `/api/v0/` 请求 → Headers → `authorization: Bearer xxx`，复制 `Bearer ` 后面的部分。
+     - **Cookie**：Network → 任意请求 → Headers → `cookie:` 整行复制（含 `ds_session_id` 等）。
+   - 需额外安装 Node.js v18+（安装包已内置，无需单独安装）。
+   - Token/Cookie 会过期；**填写 Cookie 后程序可自动刷新过期 Token**（V4.5.0 新增），无需手动重新抓取。
+   - 注意：该方式有被风控的可能，建议用小号。
 
 4. **战舰数据文件**：选择一份战舰数据 JSON（数组格式，每艘船需含 `name`、`tier`、`nation`、`vtype`、`ship_info_list` 等字段，约 33MB / 945 艘船）。可用配套爬虫生成 `wows_ships_data_*.json`。点「重新加载知识库」确认加载数量。
 5. **游戏服务器**：选择你玩的服（`cn` 国服 / `asia` 亚服 / `eu` 欧服 / `na` 美服 / `ru` 俄服），用于 shinoaki 玩家战绩查询。
@@ -198,10 +200,42 @@ dotnet publish -c Release -r win-x64 --self-contained true \
 
 直接到 [GitHub Releases](https://github.com/mao18308183273/WoWSBattleAssistant/releases) 下载最新版：
 
-- **WoWSBattleAssistant.exe**：单文件主程序，约 60MB，自包含运行时，双击即用
-- **wows_ships_data_*.json**：战舰数据文件，首次使用需在程序设置中加载
+- **WoWSBattleAssistant_Setup_V4.5.0.exe**：一键安装包（约 88MB），内置 .NET 10 Runtime + Node.js 18 LTS + 945 艘舰船数据库，安装即用，无需额外配置运行环境。
+- **DeepSeekCredentialExtractor.user.js**：油猴脚本（V4.5.0 新增），登录 chat.deepseek.com 后一键提取 Token + Cookie，导入 Tampermonkey 即可使用。
+- **wows_ships_data_*.json**：战舰数据文件（安装包已内置，单独下载用于更新或手动加载）。
+
+### 安装步骤
+
+1. 下载 `WoWSBattleAssistant_Setup_V*.exe` 并双击运行。
+2. 按向导完成安装（默认路径 `C:\Program Files\WoWSBattleAssistant`）。
+3. 从桌面或开始菜单启动程序。
+4. 首次启动后点击右上角 **⚙** 打开设置，选择 AI 提供方并填写凭证（推荐用油猴脚本一键获取 DeepSeek Token/Cookie）。
+5. 保存设置即可开始使用。
 
 ## 更新日志
+
+### V4.5.0（2026-09-06）
+
+**新增**
+- **油猴凭证一键提取脚本**：`DeepSeekCredentialExtractor.user.js`，登录 chat.deepseek.com 后一键提取 Token + Cookie，带有效性验证（显示用户 ID + 套餐），三个复制按钮（复制 Token / 复制 Cookie / 一键复制全部）。
+- **设置面板 Token 验证按钮**：DeepSeek Token 输入框旁新增「验证」按钮，即时验证 Token 有效性并显示用户 ID 和套餐。
+- **Token 过期自动刷新**：分析请求遇到 401 时，若配置了 Cookie 自动刷新 Token 并重试，用户无感知。
+- **Inno Setup 安装程序**：一键安装包，内置 .NET 10 Desktop Runtime + Node.js 18 LTS + 945 艘舰船数据库，安装即用。
+
+**修复**
+- **手动识别功能修复**：GLM/通义引擎阵容识别时，`BuildPayload` 硬编码 `stream=true` 但 `RecognizeShipsAsync` 未处理 SSE 流式响应，导致 `JsonNode.Parse` 抛出 "The node must be of type 'JsonObject'"。修复为识别阵容时使用 `stream=false` 返回普通 JSON。
+- 安装程序中文乱码：`setup.iss` 转为 UTF-8 with BOM 编码，Inno Setup 正确解析中文。
+- 12 项代码修复：SettingsWindow.CopySettings 漏复制字段、AIAnalyzerFactory sync-over-async 死锁、ComboBox 弹层键盘导航误伤、ScreenCaptureService 越界防护、ShipDatabase volatile、全局 UI 异常兜底、OnClosing 资源清理等。
+
+### V4.3.0（2026-09-06）
+
+**新增**
+- Inno Setup 安装程序部署，支持一键安装到电脑使用。
+- 安装包内置舰船数据库文件（945 艘，约 33MB），无需单独下载。
+
+**修复**
+- 版本号统一（主程序/安装脚本/打包脚本/README 全部一致）。
+- 安装程序依赖运行时内置（.NET 10 Runtime + Node.js 18）。
 
 ### V4.0.0（2026-08-21）
 

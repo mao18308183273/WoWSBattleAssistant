@@ -137,7 +137,7 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
                 if (!string.IsNullOrWhiteSpace(request.LineupImageBase64))
                     images.Add(request.LineupImageBase64);
                 images.Add(request.ImageBase64);
-                payload = BuildPayload(systemPrompt, userText, images.ToArray());
+                payload = BuildPayload(systemPrompt, userText, stream: true, images.ToArray());
             }
             var httpReq = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions");
             httpReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
@@ -294,8 +294,8 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
         return JsonSerializer.Serialize(payload, JsonOpts);
     }
 
-    /// <summary>构造 OpenAI 兼容的请求体（支持多张图片）</summary>
-    protected virtual string BuildPayload(string systemPrompt, string userText, params string[] imageBase64List)
+    /// <summary>构造 OpenAI 兼容的请求体（支持多张图片）。stream=false 时返回普通 JSON，供识别阵容等短任务使用。</summary>
+    protected virtual string BuildPayload(string systemPrompt, string userText, bool stream = true, params string[] imageBase64List)
     {
         var contentList = new List<object>();
         foreach (var img in imageBase64List)
@@ -314,7 +314,7 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
             },
             temperature = 0.3,
             max_tokens = 4096,
-            stream = true
+            stream = stream
         };
         return JsonSerializer.Serialize(payload, JsonOpts);
     }
@@ -397,7 +397,7 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
 
             var imageBase64 = ScreenCaptureService.EncodeToBase64(lineupImage);
             var userText = "请识别这张《战舰世界》开局阵容截图中每一行的玩家名与舰船名，组成配对返回，严格只输出 JSON。";
-            var payload = BuildPayload(RecognitionSystemPrompt, userText, imageBase64);
+            var payload = BuildPayload(RecognitionSystemPrompt, userText, stream: false, imageBase64);
 
             var httpReq = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions");
             httpReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ApiKey);
