@@ -623,6 +623,49 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private async void BtnVerifyDsToken_Click(object sender, RoutedEventArgs e)
+    {
+        var token = PbDeepSeekToken.Password;
+        var cookie = TxtDeepSeekCookie.Text;
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            TxtDsTokenStatus.Text = "❌ 请先填写 Token";
+            TxtDsTokenStatus.Foreground = System.Windows.Media.Brushes.OrangeRed;
+            return;
+        }
+
+        TxtDsTokenStatus.Text = "⏳ 验证中...";
+        TxtDsTokenStatus.Foreground = System.Windows.Media.Brushes.Gray;
+        var btn = sender as System.Windows.Controls.Button;
+        if (btn != null) btn.IsEnabled = false;
+
+        try
+        {
+            var (valid, userId, plan) = await WoWSBattleAssistant.Services.AI.DeepSeek.DeepSeekVisionAnalyzer
+                .VerifyTokenAsync(token, string.IsNullOrWhiteSpace(cookie) ? null : cookie);
+            if (valid)
+            {
+                var uid = string.IsNullOrEmpty(userId) ? "?" : userId.Substring(0, Math.Min(12, userId.Length)) + "...";
+                TxtDsTokenStatus.Text = $"✅ Token 有效 (用户: {uid}, 套餐: {plan ?? "未知"})";
+                TxtDsTokenStatus.Foreground = System.Windows.Media.Brushes.LimeGreen;
+            }
+            else
+            {
+                TxtDsTokenStatus.Text = "❌ Token 无效或已过期，请重新获取";
+                TxtDsTokenStatus.Foreground = System.Windows.Media.Brushes.OrangeRed;
+            }
+        }
+        catch (Exception ex)
+        {
+            TxtDsTokenStatus.Text = $"❌ 验证失败: {ex.Message}";
+            TxtDsTokenStatus.Foreground = System.Windows.Media.Brushes.OrangeRed;
+        }
+        finally
+        {
+            if (btn != null) btn.IsEnabled = true;
+        }
+    }
+
     /// <summary>诊断为什么 Directory.Exists 失败。返回可读的原因字符串。</summary>
     private static string DiagnoseInaccessiblePath(string path)
     {

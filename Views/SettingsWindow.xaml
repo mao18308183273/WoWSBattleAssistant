@@ -164,11 +164,19 @@
                         <Border x:Name="DsConfigPanel" Visibility="Collapsed">
                             <StackPanel>
                                 <TextBlock Text="DeepSeek Token（authorization，去掉 Bearer 前缀）" Margin="0,12,0,4" FontSize="12"/>
-                                <PasswordBox x:Name="PbDeepSeekToken" Margin="0,0,0,6"/>
-                                <TextBlock Text="DeepSeek Cookie（整行）" Margin="0,4,0,4" FontSize="12"/>
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <PasswordBox x:Name="PbDeepSeekToken" Grid.Column="0" Margin="0,0,6,0"/>
+                                    <Button x:Name="BtnVerifyDsToken" Content="验证" Grid.Column="1" Padding="12,4" Background="#FF4FC3F7" Foreground="Black" FontSize="11" Click="BtnVerifyDsToken_Click" ToolTip="验证 Token 是否有效，显示用户 ID 和套餐"/>
+                                </Grid>
+                                <TextBlock x:Name="TxtDsTokenStatus" Text="" Margin="0,0,0,4" FontSize="11" Foreground="#FF909090"/>
+                                <TextBlock Text="DeepSeek Cookie（整行，填了可自动刷新过期 Token）" Margin="0,4,0,4" FontSize="12"/>
                                 <TextBox x:Name="TxtDeepSeekCookie" Margin="0,0,0,6" AcceptsReturn="True" TextWrapping="Wrap" Height="50" VerticalScrollBarVisibility="Auto" FontSize="11"/>
                                 <CheckBox x:Name="ChkDsThinking" Content="启用思考模式（显示思考过程，但等待时间更长）" Margin="0,2,0,2" FontSize="11" Foreground="#FF909090"/>
-                                <TextBlock Text="获取方式：浏览器登录 chat.deepseek.com → F12 → Network → 点任意 api/v0 请求 → Headers → 复制 authorization(去 Bearer ) 与 cookie 整行。Token 过期需重新复制。本功能依赖本机 Node.js（用于 PoW 求解）。" FontSize="11" Foreground="#FF909090" TextWrapping="Wrap"/>
+                                <TextBlock Text="获取方式（二选一）：&#10;① 推荐：安装油猴脚本「DeepSeek API 凭证提取器」，登录 chat.deepseek.com 后点悬浮按钮一键提取 Token。&#10;② 手动：浏览器登录 chat.deepseek.com → F12 → Network → 点任意 api/v0 请求 → Headers → 复制 authorization(去 Bearer 前缀) 与 cookie 整行。&#10;Token 过期后，只要填了 Cookie，程序会自动刷新无需手动重填。本功能依赖本机 Node.js（用于 PoW 求解）。" FontSize="11" Foreground="#FF909090" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
                     </StackPanel>

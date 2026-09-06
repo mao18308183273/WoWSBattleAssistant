@@ -36,7 +36,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
     private static readonly int TzOffset =
         (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow).TotalSeconds;
 
-    private readonly string _token;
+    private string _token;
     private readonly string _cookie;
     private readonly bool _thinkingEnabled;
 
@@ -198,7 +198,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
     /// <summary>上传图片并发起一次视觉对话。可传入已存在的会话 ID 与父消息 ID 实现追问续接，否则新建会话。</summary>
     private async Task<ChatResult> ChatWithImagesAsync(string prompt, List<(byte[] bytes, string name)> images,
         bool thinkingEnabled, Action<string>? onChunk, CancellationToken ct,
-        string? sessionId = null, string? parentMessageId = null)
+        string? sessionId = null, string? parentMessageId = null, bool allowTokenRefresh = true)
     {
         // 1) 创建会话（仅在没有可复用会话时才新建）
         var realSessionId = string.IsNullOrWhiteSpace(sessionId)
@@ -235,6 +235,12 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         req.Content = new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json");
 
         using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized && allowTokenRefresh && await TryRefreshTokenAsync(ct))
+        {
+            // Token 已过期，通过 Cookie 刷新后重试一次（重新走完整流程，PoW/hif 重新生成）
+            return await ChatWithImagesAsync(prompt, images, thinkingEnabled, onChunk, ct,
+                sessionId, parentMessageId, allowTokenRefresh: false);
+        }
         if (!resp.IsSuccessStatusCode)
         {
             var errText = await resp.Content.ReadAsStringAsync(ct);
@@ -710,6 +716,47 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             return node["data"]?["biz_data"]?["token"]?.ToString();
         }
         catch { return null; }
+    }
+
+    /// <summary>验证 Token 是否有效，返回用户 ID 与套餐（设置面板"验证"按钮用）。</summary>
+    public static async Task<(bool Valid, string? UserId, string? Plan)> VerifyTokenAsync(
+        string token, string? cookie = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return (false, null, null);
+        try
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, $"{BaseHost}/api/v0/users/current");
+            req.Headers.Accept.ParseAdd("*/*");
+            req.Headers.AcceptLanguage.ParseAdd("zh-CN,zh;q=0.9");
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            if (!string.IsNullOrWhiteSpace(cookie))
+                req.Headers.TryAddWithoutValidation("Cookie", cookie);
+            req.Headers.UserAgent.ParseAdd(UserAgent);
+            req.Headers.Add("Origin", "https://chat.deepseek.com");
+            req.Headers.Referrer = new Uri("https://chat.deepseek.com/");
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+            using var resp = await Http.SendAsync(req, cts.Token);
+            if (!resp.IsSuccessStatusCode) return (false, null, null);
+            var text = await resp.Content.ReadAsStringAsync(cts.Token);
+            var node = JsonNode.Parse(text);
+            if (node?["code"]?.GetValue<int>() != 0) return (false, null, null);
+            var biz = node["data"]?["biz_data"];
+            return (true, biz?["id"]?.ToString(), biz?["plan"]?.ToString());
+        }
+        catch { return (false, null, null); }
+    }
+
+    /// <summary>实例方法：Token 过期（401）时用 Cookie 自动刷新，成功则更新 _token 并返回 true。</summary>
+    private async Task<bool> TryRefreshTokenAsync(CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(_cookie)) return false;
+        var newToken = await TryFetchTokenAsync(_cookie, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(newToken)) return false;
+        _token = newToken;
+        AppLog.Info("DeepSeek Token 已过期，已通过 Cookie 自动刷新。");
+        return true;
     }
 
     // ===== 提示词(与 OpenAICompatibleAnalyzer 保持一致) =====

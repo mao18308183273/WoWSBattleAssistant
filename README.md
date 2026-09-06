@@ -1,6 +1,6 @@
 # WoWSBattleAssistant · 战舰世界实时战斗分析助手
 
-![version](https://img.shields.io/badge/version-4.3.0-9B59B6) ![license](https://img.shields.io/badge/license-personal-F39C12) ![dotnet](https://img.shields.io/badge/.NET-10-blue) ![platform](https://img.shields.io/badge/platform-Win10%2B11-lightgrey)
+![version](https://img.shields.io/badge/version-4.5.0-9B59B6) ![license](https://img.shields.io/badge/license-personal-F39C12) ![dotnet](https://img.shields.io/badge/.NET-10-blue) ![platform](https://img.shields.io/badge/platform-Win10%2B11-lightgrey)
 
 一个为《战舰世界》（World of Warships）做的实时战术分析悬浮窗工具。开局读秒阶段截一张阵容图、对局中截一张小地图，AI 结合双方舰船参数、**联网查询的玩家战绩**与小地图态势，给出本局的打法建议、威胁评估与优先目标。V3.0.0 起支持**自动读取游戏对局文件**，无需手动截阵容。
 
