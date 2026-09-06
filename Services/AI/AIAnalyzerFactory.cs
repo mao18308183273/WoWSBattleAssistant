@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using WoWSBattleAssistant.Models;
 
 namespace WoWSBattleAssistant.Services.AI;
@@ -5,18 +6,20 @@ namespace WoWSBattleAssistant.Services.AI;
 /// <summary>根据配置创建对应的 AI 分析器</summary>
 public static class AIAnalyzerFactory
 {
-    public static IAIBattleAnalyzer Create(AppSettings settings)
+    /// <summary>异步创建分析器。DeepSeek 分支可能需要在网络自动获取 Token，必须异步等待，
+    /// 避免在 UI 线程用 .Result 同步阻塞造成死锁（sync-over-async）。</summary>
+    public static async Task<IAIBattleAnalyzer> CreateAsync(AppSettings settings)
     {
         return settings.AiProvider switch
         {
             AiProvider.Glm => new GlmBattleAnalyzer(settings.GlmApiKey, settings.GlmModel),
             AiProvider.Qwen => new QwenVlBattleAnalyzer(settings.QwenApiKey, settings.QwenModel),
-            AiProvider.DeepSeek => CreateDeepSeek(settings),
+            AiProvider.DeepSeek => await CreateDeepSeekAsync(settings).ConfigureAwait(false),
             _ => throw new ArgumentOutOfRangeException(nameof(settings.AiProvider))
         };
     }
 
-    private static DeepSeek.DeepSeekVisionAnalyzer CreateDeepSeek(AppSettings settings)
+    private static async Task<DeepSeek.DeepSeekVisionAnalyzer> CreateDeepSeekAsync(AppSettings settings)
     {
         var token = settings.DeepSeekToken;
         var cookie = settings.DeepSeekCookie;
@@ -26,7 +29,9 @@ public static class AIAnalyzerFactory
         {
             try
             {
-                var fetched = DeepSeek.DeepSeekVisionAnalyzer.TryFetchTokenAsync(cookie).Result;
+                var fetched = await DeepSeek.DeepSeekVisionAnalyzer
+                    .TryFetchTokenAsync(cookie)
+                    .ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(fetched))
                 {
                     token = fetched;

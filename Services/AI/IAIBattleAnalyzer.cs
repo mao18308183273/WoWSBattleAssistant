@@ -250,9 +250,16 @@ public abstract class OpenAICompatibleAnalyzer : IAIBattleAnalyzer
     protected virtual string BuildFollowUpPayload(BattleAnalysisRequest request)
     {
         var ctx = request.Conversation!;
-        var messages = new List<object>();
-        foreach (var m in ctx.Messages)
-            messages.Add(m);
+
+        // 长对话保护：历史无限累积会让 payload 不断膨胀，最终超出模型上下文窗口。
+        // 只保留最近 N 条消息，在保持追问上下文连续性的同时控制体积；
+        // 少于 N 条时行为与原来完全一致。
+        const int MaxHistoryMessages = 10;
+        var history = ctx.Messages;
+        var messages = new List<object>(
+            history.Count > MaxHistoryMessages
+                ? history.GetRange(history.Count - MaxHistoryMessages, MaxHistoryMessages)
+                : history);
 
         // 追问时直接回答，不重复之前分析，不再用开场分析的完整四段格式
         var followUpText = "（直接回答我的问题，不要重复之前的分析，聚焦问题本身简洁回答）" +

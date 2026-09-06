@@ -449,8 +449,14 @@ public partial class SettingsWindow : Window
         dst.EnableDeepSeekThinking = src.EnableDeepSeekThinking;
         dst.EnableVoiceControl = src.EnableVoiceControl;
         dst.VoiceConfidenceThreshold = src.VoiceConfidenceThreshold;
+        dst.EnablePowerOverlay = src.EnablePowerOverlay;
         dst.ShipDataPath = src.ShipDataPath;
         dst.MinimapRegion = src.MinimapRegion;
+        dst.WindowLeft = src.WindowLeft;
+        dst.WindowTop = src.WindowTop;
+        dst.WindowWidth = src.WindowWidth;
+        dst.WindowHeight = src.WindowHeight;
+        dst.AttachKnowledgeBase = src.AttachKnowledgeBase;
         dst.SystemPrompt = src.SystemPrompt;
         dst.Server = src.Server;
         dst.GamePath = src.GamePath;

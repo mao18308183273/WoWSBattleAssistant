@@ -1,6 +1,6 @@
 # WoWSBattleAssistant · 战舰世界实时战斗分析助手
 
-![version](https://img.shields.io/badge/version-3.0.0-9B59B6) ![license](https://img.shields.io/badge/license-personal-F39C12) ![dotnet](https://img.shields.io/badge/.NET-10-blue) ![platform](https://img.shields.io/badge/platform-Win10%2B11-lightgrey)
+![version](https://img.shields.io/badge/version-4.0.0-9B59B6) ![license](https://img.shields.io/badge/license-personal-F39C12) ![dotnet](https://img.shields.io/badge/.NET-10-blue) ![platform](https://img.shields.io/badge/platform-Win10%2B11-lightgrey)
 
 一个为《战舰世界》（World of Warships）做的实时战术分析悬浮窗工具。开局读秒阶段截一张阵容图、对局中截一张小地图，AI 结合双方舰船参数、**联网查询的玩家战绩**与小地图态势，给出本局的打法建议、威胁评估与优先目标。V3.0.0 起支持**自动读取游戏对局文件**，无需手动截阵容。
 
@@ -202,6 +202,20 @@ dotnet publish -c Release -r win-x64 --self-contained true \
 - **wows_ships_data_*.json**：战舰数据文件，首次使用需在程序设置中加载
 
 ## 更新日志
+
+### V4.0.0（2026-08-21）
+
+**修复**
+- 修复语音识别平台接口异常，语音指令恢复可用。
+- DeepSeek 引擎追问改为复用同一会话（chat_session_id + parent_message_id 续接），不再每次都新开对话。
+
+### V3.2.0（2026-08-20）
+
+**新增**
+- 语音播报：分析结果关键结论语音播报。
+- 战力对比悬浮窗：开局自动显示双方战力总和，单击展开明细。
+- 阵容解析增强：从 tempArenaInfo.json 直接读取舰船原名与参数，知识库未命中时也能降级显示。
+- 设置面板扩展：游戏路径、日志查看/导出等配置项。
 
 ### V3.0.0（2026-08-03）
 

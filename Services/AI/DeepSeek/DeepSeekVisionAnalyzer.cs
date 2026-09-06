@@ -75,21 +75,41 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             EnsureToken();
 
             // ===== 追问模式 =====
-            // 不再依赖 DeepSeekSessionId（从未赋值导致追问永远新开对话），
-            // 改为把历史对话重构成文本，带上追问附带的新截图，走正常视觉流程。
+            // 优先复用已有的 DeepSeek 会话（同一 chat_session_id + parent_message_id），
+            // 真正把追问接在同一段对话里；只有会话不可用时（如程序重启后）才退回"历史重构成文本 + 新开会话"。
             if (!string.IsNullOrWhiteSpace(request.FollowUpQuestion) && request.Conversation != null)
             {
                 var ctx = request.Conversation;
-                var followUpPrompt = BuildFollowUpPrompt(ctx, request.FollowUpQuestion);
 
                 var fuImages = new List<(byte[] bytes, string name)>();
                 if (!string.IsNullOrWhiteSpace(request.ImageBase64))
                     fuImages.Add((Convert.FromBase64String(request.ImageBase64), "minimap.png"));
 
+                if (!string.IsNullOrWhiteSpace(ctx.DeepSeekSessionId))
+                {
+                    // 复用同一会话：直接把新问题（及新截图）发给已有会话
+                    var parentId = string.IsNullOrWhiteSpace(ctx.DeepSeekLastMessageId) ? null : ctx.DeepSeekLastMessageId;
+                    var fuChat = await ChatWithImagesAsync(request.FollowUpQuestion, fuImages,
+                        thinkingEnabled: false, request.OnStreamChunk, ct,
+                        sessionId: ctx.DeepSeekSessionId, parentMessageId: parentId);
+                    result.Success = true;
+                    result.Content = fuChat.Content;
+                    result.DeepSeekSessionId = fuChat.SessionId;
+                    result.DeepSeekLastMessageId = fuChat.MessageId;
+                    result.Elapsed = sw.Elapsed;
+                    return result;
+                }
+
+                // 兜底：无可用会话时，把历史对话重构成文本，新开一个会话
+                var followUpPrompt = BuildFollowUpPrompt(ctx, request.FollowUpQuestion);
                 var fuContent = await ChatWithImagesAsync(followUpPrompt, fuImages,
                     thinkingEnabled: false, request.OnStreamChunk, ct);
                 result.Success = true;
-                result.Content = fuContent;
+                result.Content = fuContent.Content;
+                // 新会话也要回传 id：让后续追问能复用本次会话，
+                // 否则每次重启后都只能重开会话、上下文断裂
+                result.DeepSeekSessionId = fuContent.SessionId;
+                result.DeepSeekLastMessageId = fuContent.MessageId;
                 result.Elapsed = sw.Elapsed;
                 return result;
             }
@@ -114,10 +134,12 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
                 images.Add((Convert.FromBase64String(request.LineupImageBase64), "lineup.png"));
             images.Add((Convert.FromBase64String(request.ImageBase64), "minimap.png"));
 
-            var content = await ChatWithImagesAsync(prompt, images, thinkingEnabled: _thinkingEnabled,
+            var chat = await ChatWithImagesAsync(prompt, images, thinkingEnabled: _thinkingEnabled,
                 request.OnStreamChunk, ct);
             result.Success = true;
-            result.Content = content;
+            result.Content = chat.Content;
+            result.DeepSeekSessionId = chat.SessionId;
+            result.DeepSeekLastMessageId = chat.MessageId;
             result.Elapsed = sw.Elapsed;
             return result;
         }
@@ -149,12 +171,12 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             var prompt = RecognitionSystemPrompt + "\n\n" +
                 "请识别这张《战舰世界》开局阵容截图中每一行的玩家名与舰船名,组成配对返回,严格只输出 JSON。";
 
-            var content = await ChatWithImagesAsync(prompt,
+            var chat = await ChatWithImagesAsync(prompt,
                 new List<(byte[], string)> { (pngBytes, "lineup.png") },
                 thinkingEnabled: false, onChunk: null, ct);
 
-            result.RawContent = content;
-            LineupParser.Parse(content, result);
+            result.RawContent = chat.Content;
+            LineupParser.Parse(chat.Content, result);
             return result;
         }
         catch (OperationCanceledException)
@@ -173,12 +195,15 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
     // ===== 核心流程 =====
 
-    /// <summary>上传图片并发起一次视觉对话,返回累积的 RESPONSE 正文。</summary>
-    private async Task<string> ChatWithImagesAsync(string prompt, List<(byte[] bytes, string name)> images,
-        bool thinkingEnabled, Action<string>? onChunk, CancellationToken ct)
+    /// <summary>上传图片并发起一次视觉对话。可传入已存在的会话 ID 与父消息 ID 实现追问续接，否则新建会话。</summary>
+    private async Task<ChatResult> ChatWithImagesAsync(string prompt, List<(byte[] bytes, string name)> images,
+        bool thinkingEnabled, Action<string>? onChunk, CancellationToken ct,
+        string? sessionId = null, string? parentMessageId = null)
     {
-        // 1) 创建会话
-        var sessionId = await CreateSessionAsync(ct);
+        // 1) 创建会话（仅在没有可复用会话时才新建）
+        var realSessionId = string.IsNullOrWhiteSpace(sessionId)
+            ? await CreateSessionAsync(ct)
+            : sessionId!;
 
         // 2~4) 逐张上传 + 轮询
         var fileIds = new List<string>();
@@ -191,8 +216,8 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
         var body = new
         {
-            chat_session_id = sessionId,
-            parent_message_id = (string?)null,
+            chat_session_id = realSessionId,
+            parent_message_id = parentMessageId,   // 首次为 null，追问为上一轮助手消息 id
             model_type = "vision",
             prompt,
             ref_file_ids = fileIds,
@@ -218,7 +243,8 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
         using var stream = await resp.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream, Encoding.UTF8);
-        return await ReadSseAsync(reader, onChunk, ct);
+        var (content, messageId) = await ReadSseAsync(reader, onChunk, ct);
+        return new ChatResult { SessionId = realSessionId, MessageId = messageId, Content = content };
     }
 
     /// <summary>POST /api/v0/chat_session/create → 返回 chat_session_id</summary>
@@ -418,12 +444,15 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
     // ===== SSE 解析 =====
 
-    /// <summary>读取 SSE 流,累积 RESPONSE 类型片段的正文并返回。</summary>
-    private static async Task<string> ReadSseAsync(StreamReader reader, Action<string>? onChunk, CancellationToken ct)
+    /// <summary>读取 SSE 流,累积 RESPONSE 类型片段的正文,并返回助手消息 ID(用于追问续接)。</summary>
+    private static async Task<(string content, string? messageId)> ReadSseAsync(
+        StreamReader reader, Action<string>? onChunk, CancellationToken ct)
     {
         var fragments = new List<Fragment>();
         var finished = false;
         var lastRespLen = 0; // 跟踪上次 RESPONSE 总长度，用于计算增量
+        string? messageId = null; // 助手消息真实 id（优先）
+        string? tempId = null;    // 临时 id（兜底）
 
         while (!finished)
         {
@@ -445,6 +474,9 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             if (payload.Length == 0 || payload == "[DONE]") continue;
 
             finished |= ProcessSseData(payload, fragments);
+
+            // 抽取助手消息 id：优先用真实 message_id，缺失时用 temporary_id 兜底
+            ExtractMessageId(payload, ref messageId, ref tempId);
 
             // 流式回调：每次处理 SSE 数据后，报告新增的 RESPONSE 内容
             if (onChunk != null)
@@ -470,9 +502,29 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
                 sb.Append(f.Content);
         }
         var text = sb.ToString();
-        return string.IsNullOrEmpty(text)
+        text = string.IsNullOrEmpty(text)
             ? "（DeepSeek 未返回正文,可能已截断。思考链: " + string.Concat(fragments.Where(f => f.Type == "THINK").Select(f => f.Content)) + ")"
             : text;
+        return (text, messageId ?? tempId);
+    }
+
+    /// <summary>从一条 SSE data 里读取助手消息 id（DeepSeek 视觉：v.response.message_id / temporary_id）。</summary>
+    private static void ExtractMessageId(string payload, ref string? messageId, ref string? tempId)
+    {
+        JsonNode? node;
+        try { node = JsonNode.Parse(payload); }
+        catch { return; }
+        if (node == null) return;
+
+        var resp = node["v"]?["response"];
+        if (resp is not JsonObject r) return;
+
+        var mid = r["message_id"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(mid))
+            messageId = mid;
+        var tid = r["temporary_id"]?.ToString();
+        if (!string.IsNullOrWhiteSpace(tid))
+            tempId = tid;
     }
 
     /// <summary>处理一条 SSE data,返回 true 表示收到完成信号。</summary>
@@ -556,6 +608,14 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
     {
         public string Type { get; set; } = "";
         public StringBuilder Content { get; set; } = new();
+    }
+
+    /// <summary>一次视觉对话的结果：累积正文 + 会话/消息 ID（用于追问续接）。</summary>
+    private sealed class ChatResult
+    {
+        public string SessionId { get; set; } = "";
+        public string? MessageId { get; set; }
+        public string Content { get; set; } = "";
     }
 
     // ===== HTTP 通用 =====

@@ -27,7 +27,9 @@ public sealed class ShipDatabase
     private readonly Dictionary<long, JsonObject> _byShipId = new();
 
     private int _totalCount;
-    private bool _loaded;
+    // volatile：加载在 UI 线程完成、轮询线程读取 IsLoaded；
+    // volatile 写具备发布语义，保证字典构建对读取线程可见
+    private volatile bool _loaded;
 
     public int TotalCount => _totalCount;
     public bool IsLoaded => _loaded;

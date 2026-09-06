@@ -58,8 +58,8 @@ public sealed class ConversationContext
     /// <summary>DeepSeek 专用：会话 ID</summary>
     public string? DeepSeekSessionId { get; set; }
 
-    /// <summary>DeepSeek 专用：最后一条消息 ID</summary>
-    public int DeepSeekLastMessageId { get; set; }
+    /// <summary>DeepSeek 专用：最后一条消息 ID（用于追问时作为 parent_message_id 续接同一段对话）</summary>
+    public string? DeepSeekLastMessageId { get; set; }
 
     /// <summary>最后一次分析时使用的知识库文本（追问时复用）</summary>
     public string KnowledgeBaseText { get; set; } = "";
@@ -76,4 +76,10 @@ public sealed class BattleAnalysisResult
     public string? Error { get; set; }
     public string ProviderName { get; set; } = string.Empty;
     public TimeSpan Elapsed { get; set; }
+
+    /// <summary>DeepSeek 视觉引擎专用：本次分析所在的会话 ID（追问时复用，避免新开对话）。</summary>
+    public string? DeepSeekSessionId { get; set; }
+
+    /// <summary>DeepSeek 视觉引擎专用：本次分析返回的助手消息 ID（追问时作为 parent_message_id）。</summary>
+    public string? DeepSeekLastMessageId { get; set; }
 }

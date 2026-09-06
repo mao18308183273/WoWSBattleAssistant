@@ -106,23 +106,23 @@ public partial class MainWindow : Window
         }
 
         // 全局未处理异常：防止闪退无提示
+        // 注：DispatcherUnhandledException 已在 App.xaml.cs 统一注册（记录+提示+继续运行），
+        // 这里只注册 AppDomain 级别的致命崩溃兜底（写 crash.log）
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
             var ex = args.ExceptionObject as Exception;
             AppLog.Error($"致命崩溃: {ex?.Message}\n{ex?.StackTrace}");
-            File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "crash.log"),
-                $"[{DateTime.Now}] {ex?.Message}\n{ex?.StackTrace}");
-        };
-        Dispatcher.UnhandledException += (_, args) =>
-        {
-            args.Handled = true;
-            var ex = args.Exception;
-            AppLog.Error($"UI 线程异常: {ex.Message}\n{ex.StackTrace}");
-            MessageBox.Show($"软件遇到错误:\n{ex.Message}\n\n详细信息已写入 crash.log，请发送给开发者。", "错误");
+            try
+            {
+                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "crash.log"),
+                    $"[{DateTime.Now}] {ex?.Message}\n{ex?.StackTrace}");
+            }
+            catch { /* crash.log 写入失败不影响崩溃流程 */ }
         };
         Loaded += MainWindow_Loaded;
         LocationChanged += MainWindow_LocationChanged;
         SizeChanged += MainWindow_LocationChanged;
+        Closing += MainWindow_Closing;
 
         // 流式缓冲定时器 — 每 50ms 冲洗一次 RichTextBox，模拟 rAF 批处理
         _appendTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(50), DispatcherPriority.Normal,
@@ -550,12 +550,23 @@ public partial class MainWindow : Window
 
     private void BtnClose_Click(object sender, RoutedEventArgs e)
     {
-        _cts?.Cancel();
+        CleanupOnExit();
+        Close();
+    }
+
+    /// <summary>窗口关闭前的统一清理（自定义关闭按钮和 Alt+F4/系统关闭都会走到这里）。</summary>
+    private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        CleanupOnExit();
+    }
+
+    private void CleanupOnExit()
+    {
+        try { _cts?.Cancel(); } catch { }
         _pollingTimer?.Stop();
         _voiceController?.Dispose();
         _powerOverlay?.Close();
         _powerOverlay = null;
-        Close();
     }
 
     // ===== 语音控制 =====
@@ -732,6 +743,9 @@ public partial class MainWindow : Window
             SystemPrompt = systemPrompt,
             KnowledgeBaseText = req.KnowledgeBaseText,
             PlayerThreatText = req.PlayerThreatText,
+            // DeepSeek 视觉引擎：记住本次会话 id 与最后一条消息 id，供追问续接
+            DeepSeekSessionId = result.DeepSeekSessionId,
+            DeepSeekLastMessageId = result.DeepSeekLastMessageId,
         };
     }
 
@@ -835,7 +849,7 @@ public partial class MainWindow : Window
                 }),
             };
 
-            var analyzer = AIAnalyzerFactory.Create(_settings);
+            var analyzer = await AIAnalyzerFactory.CreateAsync(_settings);
             var result = await analyzer.AnalyzeAsync(req);
 
             if (result.Success)
@@ -843,6 +857,10 @@ public partial class MainWindow : Window
                 // 更新对话历史
                 _conversation.Messages.Add(new { role = "user", content = question });
                 _conversation.Messages.Add(new { role = "assistant", content = result.Content });
+                // DeepSeek 视觉引擎：用本次返回刷新会话 id 与最后消息 id，保证后续追问仍接在同一段对话
+                if (!string.IsNullOrWhiteSpace(result.DeepSeekSessionId))
+                    _conversation.DeepSeekSessionId = result.DeepSeekSessionId;
+                _conversation.DeepSeekLastMessageId = result.DeepSeekLastMessageId;
                 TxtStatus.Text = $"追问完成 · {result.ProviderName}";
             }
             else
@@ -1020,6 +1038,11 @@ public partial class MainWindow : Window
             Keyboard.FocusedElement is System.Windows.Controls.PasswordBox)
             return;
 
+        // 下拉框(ComboBox)展开后焦点在弹层内的列表项上，此时方向键/回车/字母定位
+        // 必须放行，否则用户无法用键盘操作下拉列表（鼠标仍可用但键盘导航被误伤）
+        if (IsComboBoxPopupFocused(Keyboard.FocusedElement))
+            return;
+
         // Ctrl+C：如果有选中内容则走原生复制（只复制选中部分），否则复制全部结果
         if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
         {
@@ -1033,6 +1056,22 @@ public partial class MainWindow : Window
         }
 
         e.Handled = true;
+    }
+
+    /// <summary>判断焦点是否位于 ComboBox 展开的弹出列表中（视觉树向上找 Popup / 列表项）。</summary>
+    private static bool IsComboBoxPopupFocused(IInputElement? focused)
+    {
+        for (var d = focused as System.Windows.DependencyObject;
+             d != null;
+             d = System.Windows.Media.VisualTreeHelper.GetParent(d))
+        {
+            if (d is System.Windows.Controls.Primitives.Popup ||
+                d is System.Windows.Controls.Primitives.Selector ||
+                d is System.Windows.Controls.ComboBoxItem ||
+                d is System.Windows.Controls.ListBoxItem)
+                return true;
+        }
+        return false;
     }
 
     // ===== 步骤①：手动截阵容（降级方案）=====
@@ -1104,7 +1143,7 @@ public partial class MainWindow : Window
 
             // 调 AI 识别（降级方案）
             TxtStatus.Text = "AI 识别阵容中（可能需 10-30 秒）...";
-            var analyzer = AIAnalyzerFactory.Create(_settings);
+            var analyzer = await AIAnalyzerFactory.CreateAsync(_settings);
             var rec = await analyzer.RecognizeShipsAsync(shot!, _cts.Token);
 
             if (!rec.Success)
@@ -1323,7 +1362,7 @@ public partial class MainWindow : Window
             _detailText = "";
 
             // 3. 调 AI 分析
-            var analyzer = AIAnalyzerFactory.Create(_settings);
+            var analyzer = await AIAnalyzerFactory.CreateAsync(_settings);
             var minimapBase64 = ScreenCaptureService.EncodeToBase64(_minimapImage);
             string lineupBase64 = "";
             if (_lineupImage != null)

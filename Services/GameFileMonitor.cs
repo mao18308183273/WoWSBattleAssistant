@@ -145,7 +145,20 @@ public sealed class GameFileMonitor
             fs.ReadExactly(buffer, 0, 4);
             sr.DiscardBufferedData();
             int dataLen = BitConverter.ToInt32(buffer, 0);
-            jsonText = sr.ReadToEnd()[..Math.Min(dataLen, (int)(fs.Length - fs.Position))];
+            long remaining = fs.Length - fs.Position;
+
+            // 防御性解析：偏移 8 处按"长度字段"读取。若读到的值明显不合理
+            // （≤0 或超过文件剩余+头部），说明该文件实际布局是
+            // "魔数(4) + 长度(4) + 数据"（长度在偏移 4），此时回退为读取全部剩余文本，
+            // 避免把数据前 4 字节误当长度、导致 JSON 解析失败。
+            if (dataLen <= 0 || dataLen > remaining + 8)
+            {
+                jsonText = sr.ReadToEnd();
+            }
+            else
+            {
+                jsonText = sr.ReadToEnd()[..Math.Min(dataLen, (int)remaining)];
+            }
         }
         else
         {

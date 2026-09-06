@@ -25,14 +25,31 @@ public static class ScreenCaptureService
         var w = (int)Math.Round(region.Width);
         var h = (int)Math.Round(region.Height);
 
-        // 防止越界
-        var screenW = SystemParameters.PrimaryScreenWidth;
-        var screenH = SystemParameters.PrimaryScreenHeight;
-
         using var bmp = new Bitmap(w, h, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(bmp))
         {
-            g.CopyFromScreen(x, y, 0, 0, new System.Drawing.Size(w, h), CopyPixelOperation.SourceCopy);
+            // CopyFromScreen 的源坐标是物理像素；WPF 的 SystemParameters 是逻辑像素，
+            // 需按当前 DPI 换算成物理屏幕边界后求交集，防止区域部分/完全越出屏幕时报错。
+            var scaleX = g.DpiX / 96.0;
+            var scaleY = g.DpiY / 96.0;
+            var vLeft = (int)Math.Round(SystemParameters.VirtualScreenLeft * scaleX);
+            var vTop = (int)Math.Round(SystemParameters.VirtualScreenTop * scaleY);
+            var vRight = (int)Math.Round((SystemParameters.VirtualScreenLeft + SystemParameters.VirtualScreenWidth) * scaleX);
+            var vBottom = (int)Math.Round((SystemParameters.VirtualScreenTop + SystemParameters.VirtualScreenHeight) * scaleY);
+
+            var srcLeft = Math.Max(x, vLeft);
+            var srcTop = Math.Max(y, vTop);
+            var srcRight = Math.Min(x + w, vRight);
+            var srcBottom = Math.Min(y + h, vBottom);
+
+            if (srcRight <= srcLeft || srcBottom <= srcTop)
+                throw new InvalidOperationException("截图区域完全超出屏幕范围，请重新框选小地图位置。");
+
+            // 只拷贝与屏幕可见区域相交的部分，其余区域保持透明（不影响目标尺寸）
+            var clipW = srcRight - srcLeft;
+            var clipH = srcBottom - srcTop;
+            g.CopyFromScreen(srcLeft, srcTop, srcLeft - x, srcTop - y,
+                new System.Drawing.Size(clipW, clipH), CopyPixelOperation.SourceCopy);
         }
 
         return ToBitmapSource(bmp);
