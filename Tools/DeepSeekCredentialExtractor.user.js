@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         DeepSeek 凭证一键提取器 (Token + Cookie)
 // @namespace    http://tampermonkey.net/
-// @version      4.0
-// @description  从 chat.deepseek.com 一键提取 Token 和 Cookie，支持拦截式获取、验证有效性、分别复制
+// @version      4.1
+// @description  从 chat.deepseek.com 一键提取 Token 和 Cookie，支持拦截式获取、验证有效性、分别复制；显示网页当前模型配置（V4.1 Flash 统一模型适配）
 // @match        https://chat.deepseek.com/*
 // @match        https://*.deepseek.com/*
 // @grant        GM_xmlhttpRequest
@@ -18,10 +18,11 @@
     if (window.__ds_auth_extractor_injected) return;
     window.__ds_auth_extractor_injected = true;
 
-    console.log('[DS Extractor v4.0] 已启动');
+    console.log('[DS Extractor v4.1] 已启动');
 
     let capturedToken = null;
     let captureStarted = false;
+    let capturedModelType = null;  // 从 completion 请求体捕获的实际模型类型
 
     // ========== 策略1: 拦截页面请求捕获 Token ==========
     function startInterception() {
@@ -34,6 +35,17 @@
                 const url = typeof args[0] === 'string' ? args[0] : args[0]?.url;
                 const init = args[1] || {};
                 const headers = init.headers || {};
+
+                // 捕获 completion 请求体中的 model_type（V4.1 Flash 统一模型后确认实际值）
+                if (url && url.includes('/api/v0/chat/completion') && init.body && typeof init.body === 'string') {
+                    try {
+                        const body = JSON.parse(init.body);
+                        if (body && body.model_type) {
+                            capturedModelType = body.model_type;
+                            console.log('[DS Extractor] 捕获到 completion model_type =', capturedModelType);
+                        }
+                    } catch (e) {}
+                }
 
                 const authHeader = headers['Authorization'] || headers['authorization'];
                 if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -48,9 +60,12 @@
                     return originalFetch.apply(this, args).then(response => {
                         const clone = response.clone();
                         clone.json().then(data => {
-                            if (data?.data?.biz_data?.token) {
+                            // 兼容新协议 data.data.biz_data.token / data.data.user
+                            const d = data?.data || {};
+                            const token = d.biz_data?.token || d.user?.token || d.token;
+                            if (token && isValidTokenFormat(token)) {
                                 console.log('[DS Extractor] 从 fetch 响应中提取到 Token');
-                                capturedToken = data.data.biz_data.token;
+                                capturedToken = token;
                             }
                         }).catch(() => {});
                         return response;
@@ -208,7 +223,10 @@
         // --- 验证 Token ---
         const valid = await verifyToken(token);
 
-        return { token, tokenSource, cookie, valid };
+        // --- 模型配置（V4.1 Flash 统一模型确认用） ---
+        const modelInfo = readModelConfig();
+
+        return { token, tokenSource, cookie, valid, modelInfo };
     }
 
     function sleep(ms) {
@@ -229,11 +247,14 @@
                     if (res.status === 200) {
                         try {
                             const data = JSON.parse(res.responseText);
-                            if (data.code === 0) {
+                            // 兼容新旧协议：旧 code===0；新 data.biz_code===0 或存在 data.user
+                            const code = data.code ?? data.data?.biz_code;
+                            const biz = data.data?.biz_data || data.data?.user;
+                            if (code === 0 || data.data?.user) {
                                 resolve({
                                     valid: true,
-                                    userId: data.data?.biz_data?.id || '?',
-                                    userPlan: data.data?.biz_data?.plan || '?'
+                                    userId: biz?.id || biz?.user_id || data.data?.user?.id || '?',
+                                    userPlan: biz?.plan || data.data?.user?.chat?.plan || '?'
                                 });
                                 return;
                             }
@@ -245,6 +266,34 @@
                 timeout: 8000
             });
         });
+    }
+
+    // ========== 读取网页当前模型配置（V4.1 Flash 统一模型） ==========
+    function readModelConfig() {
+        try {
+            // 模型配置存于 localStorage __ds_remote_feature_store_model
+            const raw = localStorage.getItem('__ds_remote_feature_store_model');
+            if (!raw) return { available: false, modelTypes: [], captured: capturedModelType };
+            const store = JSON.parse(raw);
+            // 兼容不同层级：直接数组 / { model_configs: [...] } / { value: [...] }
+            let configs = null;
+            if (Array.isArray(store)) configs = store;
+            else if (Array.isArray(store.model_configs)) configs = store.model_configs;
+            else if (Array.isArray(store.value)) configs = store.value;
+            else if (store.data && Array.isArray(store.data.model_configs)) configs = store.data.model_configs;
+
+            const models = (configs || [])
+                .filter(c => c && c.model_type)
+                .map(c => ({
+                    type: c.model_type,
+                    enabled: c.enabled !== false,
+                    switchable: c.switchable === true,
+                    displayName: c.display_name || c.name || ''
+                }));
+            return { available: configs != null, modelTypes: models, captured: capturedModelType };
+        } catch (e) {
+            return { available: false, modelTypes: [], captured: capturedModelType, error: String(e) };
+        }
     }
 
     // ========== UI: 悬浮按钮 ==========
@@ -307,8 +356,8 @@
         }
 
         try {
-            const { token, tokenSource, cookie, valid } = await extractAll();
-            showResult(token, tokenSource, cookie, valid);
+            const { token, tokenSource, cookie, valid, modelInfo } = await extractAll();
+            showResult(token, tokenSource, cookie, valid, modelInfo);
         } catch (err) {
             console.error('[DS Extractor] 失败:', err);
             showError(err.message);
@@ -324,7 +373,7 @@
     }
 
     // ========== UI: 结果面板 ==========
-    function showResult(token, tokenSource, cookie, verification) {
+    function showResult(token, tokenSource, cookie, verification, modelInfo) {
         closePanel();
         const btn = document.getElementById('ds-auth-extractor-btn');
         if (btn) btn.style.display = 'none';
@@ -342,6 +391,43 @@
             ? `✅ Cookie 已获取 (${cookie.length} 字符)`
             : '⚠️ 未获取到 Cookie（请确认已登录）';
 
+        // --- 模型信息渲染（V4.1 Flash 统一模型） ---
+        let modelHtml = '';
+        if (modelInfo) {
+            const ml = modelInfo.modelTypes || [];
+            const activeModels = ml.filter(m => m.enabled).map(m => m.type);
+            const captured = modelInfo.captured;
+            if (ml.length > 0 || captured) {
+                let rows = '';
+                if (ml.length > 0) {
+                    rows = ml.map(m =>
+                        `<div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0; border-bottom:1px solid #313244; font-size:10.5px;">
+                            <span style="color:#a6adc8;">${m.type}</span>
+                            <span style="color:${m.enabled ? '#a6e3a1' : '#6c7086'}; font-size:10px;">${m.enabled ? '启用' : '停用'}${m.switchable ? ' · 可切换' : ''}</span>
+                        </div>`).join('');
+                } else {
+                    rows = `<div style="color:#6c7086; font-size:10.5px; padding:2px 0;">（远程模型配置尚未加载，请刷新页面后重试）</div>`;
+                }
+                modelHtml = `
+                    <div style="margin-bottom:12px; padding:8px 10px; background:#181825; border-radius:6px; border:1px solid #45475a;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <span style="color:#cba6f7; font-size:11px; font-weight:bold;">🤖 网页当前模型配置</span>
+                            ${captured ? `<span style="color:#f9e2af; font-size:10px;">网页实际发送: <b>${captured}</b></span>` : ''}
+                        </div>
+                        ${rows}
+                        <div style="color:#6c7086; font-size:9.5px; margin-top:4px; line-height:1.5;">
+                            启用模型: ${activeModels.join('、') || '未知'}<br>
+                            ${captured ? `completion 请求实际 model_type: <b style="color:#f9e2af;">${captured}</b>（软件内应与此一致）` : '提示: 在网页发一条消息后重新提取，可捕获实际请求的 model_type'}
+                        </div>
+                    </div>`;
+            } else {
+                modelHtml = `
+                    <div style="margin-bottom:12px; padding:8px 10px; background:#181825; border-radius:6px; border:1px solid #45475a; color:#6c7086; font-size:10px;">
+                        🤖 模型配置未读取到（localStorage 中暂无 __ds_remote_feature_store_model，不影响凭证提取）
+                    </div>`;
+            }
+        }
+
         panel.innerHTML = `
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                 <div style="font-size:14px; font-weight:bold; color:#cba6f7; display:flex; align-items:center; gap:8px;">
@@ -355,6 +441,8 @@
                 <div style="color:${statusColor}; font-weight:500;">${statusText}</div>
                 <div style="color:#6c7086; margin-top:3px; font-size:10px;">Token 来源: ${tokenSource}</div>
             </div>
+
+            ${modelHtml}
 
             <div style="margin-bottom:12px;">
                 <div style="color:#a6adc8; margin-bottom:5px; font-size:11px; display:flex; justify-content:space-between;">
@@ -388,6 +476,7 @@
                 2. 点「复制 Token」粘贴到 Token 框<br>
                 3. 点「复制 Cookie」粘贴到 Cookie 框<br>
                 4. 保存即可。填了 Cookie 后 Token 过期会自动刷新<br>
+                <span style="color:#a6e3a1;">V4.1 Flash 适配:</span> 面板会显示网页当前模型配置与实际发送的 model_type，若与软件内置不一致请告知开发者<br>
                 <span style="color:#a6e3a1;">安全提示:</span> 本脚本仅在本地读取凭证，不上传任何数据
             </div>
         `;
