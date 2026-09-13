@@ -260,7 +260,9 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         ApplyCommonHeaders(req);
         req.Content = new StringContent("{}", Encoding.UTF8, "application/json");
         var json = await SendAndReadAsync(req, ct);
-        return json["data"]?["biz_data"]?["chat_session"]?["id"]?.ToString()
+        var data = json["data"] as JsonObject;
+        var biz = data?["biz_data"] as JsonObject;
+        return biz?["chat_session"]?["id"]?.ToString()
             ?? throw new InvalidOperationException("创建会话失败:未返回 chat_session_id。");
     }
 
@@ -285,7 +287,9 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         req.Content = multipart;
 
         var json = await SendAndReadAsync(req, ct);
-        var fileId = json["data"]?["biz_data"]?["id"]?.ToString()
+        var data = json["data"] as JsonObject;
+        var biz = data?["biz_data"] as JsonObject;
+        var fileId = biz?["id"]?.ToString()
             ?? throw new InvalidOperationException("上传文件失败:未返回 file_id。");
 
         await PollFileStatusAsync(fileId, ct);
@@ -303,11 +307,14 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
                 $"{BaseHost}/api/v0/file/fetch_files?file_ids={Uri.EscapeDataString(fileId)}");
             ApplyCommonHeaders(req);
             var json = await SendAndReadAsync(req, ct);
-            var file = json["data"]?["biz_data"]?["files"]?[0];
-            if (file != null)
+            var data = json["data"] as JsonObject;
+            var biz = data?["biz_data"] as JsonObject;
+            var files = biz?["files"] as JsonArray;
+            var file = files?.FirstOrDefault();
+            if (file is JsonObject fileObj)
             {
-                var status = file["status"]?.ToString();
-                var audit = file["audit_result"]?.ToString();
+                var status = fileObj["status"]?.ToString();
+                var audit = fileObj["audit_result"]?.ToString();
                 if (status == "SUCCESS")
                 {
                     if (audit == "pass")
@@ -330,15 +337,18 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
     private async Task<string> BuildPowHeaderAsync(string targetPath, CancellationToken ct)
     {
         var challenge = await GetPowChallengeAsync(targetPath, ct);
-        var ch = challenge["challenge"]?.ToString()
+        // 防御：挑战必须是 JSON 对象（新协议若结构变化则给出清晰报错，而不是 JsonObject 类型异常）
+        if (challenge is not JsonObject chObj)
+            throw new InvalidOperationException($"PoW 挑战响应结构异常: {Truncate(challenge?.ToJsonString() ?? "null", 200)}");
+        var ch = chObj["challenge"]?.ToString()
             ?? throw new InvalidOperationException("PoW 挑战缺少 challenge 字段。");
-        var salt = challenge["salt"]?.ToString()
+        var salt = chObj["salt"]?.ToString()
             ?? throw new InvalidOperationException("PoW 挑战缺少 salt 字段。");
-        var difficulty = challenge["difficulty"]?.GetValue<long>()
+        var difficulty = chObj["difficulty"]?.GetValue<long>()
             ?? throw new InvalidOperationException("PoW 挑战缺少 difficulty 字段。");
-        var expireAt = challenge["expire_at"]?.GetValue<long>()
+        var expireAt = chObj["expire_at"]?.GetValue<long>()
             ?? throw new InvalidOperationException("PoW 挑战缺少 expire_at 字段。");
-        var signature = challenge["signature"]?.ToString()
+        var signature = chObj["signature"]?.ToString()
             ?? throw new InvalidOperationException("PoW 挑战缺少 signature 字段。");
 
         var answer = await DeepSeekPowSolver.SolveAsync(ch, salt, difficulty, expireAt, ct);
@@ -364,7 +374,9 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         req.Content = new StringContent(
             JsonSerializer.Serialize(new { target_path = targetPath }), Encoding.UTF8, "application/json");
         var json = await SendAndReadAsync(req, ct);
-        return json["data"]?["biz_data"]?["challenge"]
+        var data = json["data"] as JsonObject;
+        var biz = data?["biz_data"] as JsonObject;
+        return biz?["challenge"]
             ?? throw new InvalidOperationException("获取 PoW 挑战失败。");
     }
 
@@ -520,9 +532,10 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         JsonNode? node;
         try { node = JsonNode.Parse(payload); }
         catch { return; }
-        if (node == null) return;
+        // 防御：非 JSON 对象直接返回
+        if (node is not JsonObject obj) return;
 
-        var resp = node["v"]?["response"];
+        var resp = obj["v"]?["response"];
         if (resp is not JsonObject r) return;
 
         var mid = r["message_id"]?.ToString();
@@ -539,10 +552,11 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         JsonNode? node;
         try { node = JsonNode.Parse(payload); }
         catch { return false; }
-        if (node == null) return false;
+        // 防御：非 JSON 对象（字符串/数组/数字等）直接跳过，避免 "The node must be of type 'JsonObject'"
+        if (node is not JsonObject root) return false;
 
         // 初始完整响应:{"v":{"response":{...,"fragments":[...]}}}
-        if (node["v"] is JsonObject vObj && vObj["response"] is JsonObject respObj)
+        if (root["v"] is JsonObject vObj && vObj["response"] is JsonObject respObj)
         {
             if (respObj["fragments"] is JsonArray arr)
             {
@@ -553,9 +567,9 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             return st == "FINISHED";
         }
 
-        var p = node["p"]?.ToString();
-        var o = node["o"]?.ToString();
-        var val = node["v"];
+        var p = root["p"]?.ToString();
+        var o = root["o"]?.ToString();
+        var val = root["v"];
 
         if (p == null)
         {
@@ -571,9 +585,11 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             bool done = false;
             foreach (var item in batch)
             {
-                if (item?["p"]?.ToString() == "response/status" && item["v"]?.ToString() == "FINISHED")
+                // 防御：item 必须是 JSON 对象才访问字段
+                if (item is not JsonObject itemObj) continue;
+                if (itemObj["p"]?.ToString() == "response/status" && itemObj["v"]?.ToString() == "FINISHED")
                     done = true;
-                if (item?["p"]?.ToString() == "quasi_status" && item["v"]?.ToString() == "FINISHED")
+                if (itemObj["p"]?.ToString() == "quasi_status" && itemObj["v"]?.ToString() == "FINISHED")
                     done = true;
             }
             return done;
@@ -605,8 +621,10 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
     private static void AddFragment(List<Fragment> fragments, JsonNode? f)
     {
         if (f == null) return;
-        var type = f["type"]?.ToString() ?? "RESPONSE";
-        var content = f["content"]?.ToString() ?? "";
+        // 防御：fragment 必须是 JSON 对象（新协议若把片段压成字符串/数组则跳过，不抛异常）
+        if (f is not JsonObject fo) return;
+        var type = fo["type"]?.ToString() ?? "RESPONSE";
+        var content = fo["content"]?.ToString() ?? "";
         fragments.Add(new Fragment { Type = type, Content = new StringBuilder(content) });
     }
 
@@ -661,11 +679,15 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
         var node = JsonNode.Parse(text)
             ?? throw new InvalidOperationException($"{req.RequestUri?.AbsolutePath} 响应不是合法 JSON。");
+        // 防御：响应必须是 JSON 对象，否则给出带内容片段的清晰报错（而不是 JsonObject 类型异常）
+        if (node is not JsonObject root)
+            throw new InvalidOperationException(
+                $"{req.RequestUri?.AbsolutePath} 响应不是 JSON 对象: {Truncate(text, 300)}");
         // 兼容新协议(2026-09 官网更新)：错误码在 data.biz_code；旧协议在顶层 code
-        var code = node["data"]?["biz_code"]?.GetValue<int>() ?? node["code"]?.GetValue<int>();
+        var code = root["data"]?["biz_code"]?.GetValue<int>() ?? root["code"]?.GetValue<int>();
         if (code != 0)
         {
-            var msg = node["data"]?["biz_msg"]?.ToString() ?? node["msg"]?.ToString() ?? "";
+            var msg = root["data"]?["biz_msg"]?.ToString() ?? root["msg"]?.ToString() ?? "";
             // 40003 = Token 无效或过期，给出明确指引
             if (code == 40003)
             {
@@ -675,7 +697,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             }
             throw new InvalidOperationException($"{req.RequestUri?.AbsolutePath} 业务失败 code={code}: {msg}");
         }
-        return node;
+        return root;
     }
 
     private void EnsureToken()
@@ -713,14 +735,15 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
             var text = await resp.Content.ReadAsStringAsync(cts.Token);
             var node = JsonNode.Parse(text);
-            if (node == null) return null;
+            // 防御：非 JSON 对象直接视为无效
+            if (node is not JsonObject root) return null;
             // 兼容新协议(2026-09)：错误码在 data.biz_code；旧协议在顶层 code
-            var code = node["data"]?["biz_code"]?.GetValue<int>() ?? node["code"]?.GetValue<int>();
+            var code = root["data"]?["biz_code"]?.GetValue<int>() ?? root["code"]?.GetValue<int>();
             if (code != 0) return null;
             // 兼容多种 token 位置：data.biz_data.token / data.user.token / data.token
-            return node["data"]?["biz_data"]?["token"]?.ToString()
-                ?? node["data"]?["user"]?["token"]?.ToString()
-                ?? node["data"]?["token"]?.ToString();
+            return root["data"]?["biz_data"]?["token"]?.ToString()
+                ?? root["data"]?["user"]?["token"]?.ToString()
+                ?? root["data"]?["token"]?.ToString();
         }
         catch { return null; }
     }
@@ -748,12 +771,13 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             if (!resp.IsSuccessStatusCode) return (false, null, null);
             var text = await resp.Content.ReadAsStringAsync(cts.Token);
             var node = JsonNode.Parse(text);
-            if (node == null) return (false, null, null);
+            // 防御：非 JSON 对象直接视为无效
+            if (node is not JsonObject root) return (false, null, null);
             // 兼容新协议(2026-09)：错误码在 data.biz_code；旧协议在顶层 code
-            var code = node["data"]?["biz_code"]?.GetValue<int>() ?? node["code"]?.GetValue<int>();
+            var code = root["data"]?["biz_code"]?.GetValue<int>() ?? root["code"]?.GetValue<int>();
             if (code != 0) return (false, null, null);
             // 优先 data.biz_data（旧协议），兼容 data.user（新协议）
-            var user = node["data"]?["biz_data"] ?? node["data"]?["user"];
+            var user = root["data"]?["biz_data"] ?? root["data"]?["user"];
             if (user == null) return (false, null, null);
             var userId = user["id"]?.ToString() ?? user["user_id"]?.ToString();
             var plan = user["plan"]?.ToString() ?? user["chat"]?["plan"]?.ToString();
