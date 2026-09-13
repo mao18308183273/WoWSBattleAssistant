@@ -204,15 +204,19 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         var realSessionId = string.IsNullOrWhiteSpace(sessionId)
             ? await CreateSessionAsync(ct)
             : sessionId!;
+        AppLog.Info($"DeepSeek 会话就绪: {Truncate(realSessionId, 16)}");
 
         // 2~4) 逐张上传 + 轮询
         var fileIds = new List<string>();
         foreach (var img in images)
             fileIds.Add(await UploadAndConfirmAsync(img.bytes, img.name, thinkingEnabled, ct));
+        AppLog.Info($"DeepSeek 图片上传完成: {fileIds.Count} 张");
 
         // 5~6) completion 的 PoW + SSE
         await EnsureHifAsync(ct);
+        AppLog.Info("DeepSeek hif 令牌就绪");
         var powHeader = await BuildPowHeaderAsync("/api/v0/chat/completion", ct);
+        AppLog.Info("DeepSeek completion PoW 求解完成");
 
         var body = new
         {
@@ -247,9 +251,11 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             throw new InvalidOperationException($"completion 请求失败 {resp.StatusCode}: {Truncate(errText, 500)}");
         }
 
+        AppLog.Info("DeepSeek completion 请求已发送,等待流式响应...");
         using var stream = await resp.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream, Encoding.UTF8);
         var (content, messageId) = await ReadSseAsync(reader, onChunk, ct);
+        AppLog.Info($"DeepSeek completion 完成,正文长度 {content.Length}");
         return new ChatResult { SessionId = realSessionId, MessageId = messageId, Content = content };
     }
 
@@ -270,6 +276,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
     private async Task<string> UploadAndConfirmAsync(byte[] pngBytes, string filename, bool thinkingEnabled, CancellationToken ct)
     {
         var powHeader = await BuildPowHeaderAsync("/api/v0/file/upload_file", ct);
+        AppLog.Info("DeepSeek 上传 PoW 求解完成");
 
         var fileContent = new ByteArrayContent(pngBytes);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");

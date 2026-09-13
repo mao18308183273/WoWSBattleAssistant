@@ -111,10 +111,14 @@ public static class DeepSeekPowSolver
                 throw new InvalidOperationException($"PoW 求解器无输出。stderr: {Truncate(stderr, 500)}");
 
             var node = JsonNode.Parse(line);
-            if (node?["error"] != null)
-                throw new InvalidOperationException($"PoW 求解失败: {node["error"]}. stderr: {Truncate(stderr, 300)}");
+            // 防御：求解器输出必须是 JSON 对象，否则给出带原文的清晰报错（而不是 JsonObject 类型异常）
+            if (node is not JsonObject obj)
+                throw new InvalidOperationException(
+                    $"PoW 求解器输出结构异常(非 JSON 对象): {Truncate(line, 300)}。stderr: {Truncate(stderr, 300)}");
+            if (obj["error"] != null)
+                throw new InvalidOperationException($"PoW 求解失败: {obj["error"]}. stderr: {Truncate(stderr, 300)}");
 
-            var answer = node?["answer"]?.GetValue<double>();
+            var answer = obj["answer"]?.GetValue<double>();
             if (answer == null)
                 throw new InvalidOperationException($"PoW 求解器返回缺少 answer。原文: {Truncate(line, 300)}");
 
