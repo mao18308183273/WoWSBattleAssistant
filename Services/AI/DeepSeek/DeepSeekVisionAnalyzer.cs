@@ -151,6 +151,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         }
         catch (Exception ex)
         {
+            AppLog.Error($"DeepSeek 分析失败: {ex.Message}", ex);
             result.Success = false;
             result.Error = ex.Message;
             result.Elapsed = sw.Elapsed;
@@ -187,6 +188,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         }
         catch (Exception ex)
         {
+            AppLog.Error($"DeepSeek 阵容识别失败: {ex.Message}", ex);
             result.Success = false;
             result.Error = ex.Message;
             return result;
@@ -478,46 +480,76 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         var lastRespLen = 0; // 跟踪上次 RESPONSE 总长度，用于计算增量
         string? messageId = null; // 助手消息真实 id（优先）
         string? tempId = null;    // 临时 id（兜底）
+        int dataLines = 0;        // 收到的 data 行数（诊断用）
+        var sw = System.Diagnostics.Stopwatch.StartNew();
 
-        while (!finished)
+        // 总超时 120s：防止服务端保持连接但不下发数据导致永久挂起
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(120));
+
+        try
         {
-            var line = await reader.ReadLineAsync(ct);
-            if (line == null) break;
-
-            if (line.Length == 0) continue;
-            if (line[0] == ':') continue;
-
-            if (line.StartsWith("event:"))
+            while (!finished)
             {
-                var ev = line["event:".Length..].Trim();
-                if (ev == "close") finished = true;
-                continue;
-            }
+                var line = await reader.ReadLineAsync(timeoutCts.Token);
+                if (line == null) break;
 
-            if (!line.StartsWith("data:")) continue;
-            var payload = line["data:".Length..].TrimStart();
-            if (payload.Length == 0 || payload == "[DONE]") continue;
+                if (line.Length == 0) continue;
+                if (line[0] == ':') continue;
 
-            finished |= ProcessSseData(payload, fragments);
-
-            // 抽取助手消息 id：优先用真实 message_id，缺失时用 temporary_id 兜底
-            ExtractMessageId(payload, ref messageId, ref tempId);
-
-            // 流式回调：每次处理 SSE 数据后，报告新增的 RESPONSE 内容
-            if (onChunk != null)
-            {
-                var currentResp = new StringBuilder();
-                foreach (var f in fragments)
-                    if (f.Type == "RESPONSE")
-                        currentResp.Append(f.Content);
-                var currentLen = currentResp.Length;
-                if (currentLen > lastRespLen)
+                if (line.StartsWith("event:"))
                 {
-                    var delta = currentResp.ToString(lastRespLen, currentLen - lastRespLen);
-                    onChunk(delta);
-                    lastRespLen = currentLen;
+                    var ev = line["event:".Length..].Trim();
+                    if (ev == "close") finished = true;
+                    continue;
+                }
+
+                if (!line.StartsWith("data:")) continue;
+                var payload = line["data:".Length..].TrimStart();
+                if (payload.Length == 0 || payload == "[DONE]") continue;
+                dataLines++;
+
+                finished |= ProcessSseData(payload, fragments);
+
+                // 抽取助手消息 id：优先用真实 message_id，缺失时用 temporary_id 兜底
+                ExtractMessageId(payload, ref messageId, ref tempId);
+
+                // 流式回调：每次处理 SSE 数据后，报告新增的 RESPONSE 内容
+                if (onChunk != null)
+                {
+                    var currentResp = new StringBuilder();
+                    foreach (var f in fragments)
+                        if (f.Type == "RESPONSE")
+                            currentResp.Append(f.Content);
+                    var currentLen = currentResp.Length;
+                    if (currentLen > lastRespLen)
+                    {
+                        var delta = currentResp.ToString(lastRespLen, currentLen - lastRespLen);
+                        onChunk(delta);
+                        lastRespLen = currentLen;
+                    }
                 }
             }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            AppLog.Warn($"DeepSeek SSE 120s 超时,已收到 {dataLines} 行 data、{fragments.Count} 个片段。");
+            throw new InvalidOperationException($"DeepSeek 响应超时(120s)：服务端未完成生成。已收到 {dataLines} 行数据。请稍后重试。");
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            AppLog.Error($"DeepSeek SSE 解析异常,已处理 {dataLines} 行 data、{fragments.Count} 个片段: {ex.Message}", ex);
+            throw;
+        }
+
+        if (!finished)
+        {
+            AppLog.Warn($"DeepSeek SSE 流结束但未收到 FINISHED,共 {dataLines} 行 data、{fragments.Count} 个片段,用时 {sw.ElapsedMilliseconds}ms。");
+        }
+        else
+        {
+            AppLog.Info($"DeepSeek SSE 完成: {dataLines} 行 data,用时 {sw.ElapsedMilliseconds}ms");
         }
 
         var sb = new StringBuilder();
