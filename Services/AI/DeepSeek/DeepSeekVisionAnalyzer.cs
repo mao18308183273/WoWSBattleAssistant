@@ -270,7 +270,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         var json = await SendAndReadAsync(req, ct);
         var data = json["data"] as JsonObject;
         var biz = data?["biz_data"] as JsonObject;
-        return biz?["chat_session"]?["id"]?.ToString()
+        return JGet(JGet(biz, "chat_session"), "id")?.ToString()
             ?? throw new InvalidOperationException("创建会话失败:未返回 chat_session_id。");
     }
 
@@ -433,7 +433,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
                     throw new InvalidOperationException($"获取 hif-{kind} 失败: {resp.StatusCode}");
                 var json = await resp.Content.ReadAsStringAsync(ct);
                 var node = JsonNode.Parse(json);
-                var value = node?["data"]?["biz_data"]?["value"]?.ToString()
+                var value = JGet(JGet(JGet(node, "data"), "biz_data"), "value")?.ToString()
                     ?? throw new InvalidOperationException($"hif-{kind} 响应缺少 value。");
 
                 var ttl = 600;
@@ -574,7 +574,9 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         // 防御：非 JSON 对象直接返回
         if (node is not JsonObject obj) return;
 
-        var resp = obj["v"]?["response"];
+        // 防御：中间节点 v 也必须是对象（?.只防 null 不防类型错误，v 为字符串/数组时 ["response"] 会抛）
+        if (obj["v"] is not JsonObject vObj) return;
+        var resp = vObj["response"];
         if (resp is not JsonObject r) return;
 
         var mid = r["message_id"]?.ToString();
@@ -723,10 +725,11 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             throw new InvalidOperationException(
                 $"{req.RequestUri?.AbsolutePath} 响应不是 JSON 对象: {Truncate(text, 300)}");
         // 兼容新协议(2026-09 官网更新)：错误码在 data.biz_code；旧协议在顶层 code
-        var code = root["data"]?["biz_code"]?.GetValue<int>() ?? root["code"]?.GetValue<int>();
+        var bizCodeNode = JGet(JGet(root, "data"), "biz_code");
+        var code = bizCodeNode?.GetValue<int>() ?? root["code"]?.GetValue<int>();
         if (code != 0)
         {
-            var msg = root["data"]?["biz_msg"]?.ToString() ?? root["msg"]?.ToString() ?? "";
+            var msg = JGet(JGet(root, "data"), "biz_msg")?.ToString() ?? root["msg"]?.ToString() ?? "";
             // 40003 = Token 无效或过期，给出明确指引
             if (code == 40003)
             {
@@ -777,12 +780,13 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             // 防御：非 JSON 对象直接视为无效
             if (node is not JsonObject root) return null;
             // 兼容新协议(2026-09)：错误码在 data.biz_code；旧协议在顶层 code
-            var code = root["data"]?["biz_code"]?.GetValue<int>() ?? root["code"]?.GetValue<int>();
+            var bizCodeNode = JGet(JGet(root, "data"), "biz_code");
+            var code = bizCodeNode?.GetValue<int>() ?? root["code"]?.GetValue<int>();
             if (code != 0) return null;
             // 兼容多种 token 位置：data.biz_data.token / data.user.token / data.token
-            return root["data"]?["biz_data"]?["token"]?.ToString()
-                ?? root["data"]?["user"]?["token"]?.ToString()
-                ?? root["data"]?["token"]?.ToString();
+            return JGet(JGet(JGet(root, "data"), "biz_data"), "token")?.ToString()
+                ?? JGet(JGet(JGet(root, "data"), "user"), "token")?.ToString()
+                ?? JGet(JGet(root, "data"), "token")?.ToString();
         }
         catch { return null; }
     }
@@ -813,13 +817,13 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             // 防御：非 JSON 对象直接视为无效
             if (node is not JsonObject root) return (false, null, null);
             // 兼容新协议(2026-09)：错误码在 data.biz_code；旧协议在顶层 code
-            var code = root["data"]?["biz_code"]?.GetValue<int>() ?? root["code"]?.GetValue<int>();
+            var code = JGet(JGet(root, "data"), "biz_code")?.GetValue<int>() ?? root["code"]?.GetValue<int>();
             if (code != 0) return (false, null, null);
             // 优先 data.biz_data（旧协议），兼容 data.user（新协议）
-            var user = root["data"]?["biz_data"] ?? root["data"]?["user"];
-            if (user == null) return (false, null, null);
-            var userId = user["id"]?.ToString() ?? user["user_id"]?.ToString();
-            var plan = user["plan"]?.ToString() ?? user["chat"]?["plan"]?.ToString();
+            var user = JGet(JGet(root, "data"), "biz_data") ?? JGet(JGet(root, "data"), "user");
+            if (user is not JsonObject userObj) return (false, null, null);
+            var userId = userObj["id"]?.ToString() ?? userObj["user_id"]?.ToString();
+            var plan = userObj["plan"]?.ToString() ?? JGet(JGet(userObj, "chat"), "plan")?.ToString();
             return (true, userId, plan);
         }
         catch { return (false, null, null); }
@@ -1024,6 +1028,10 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         }
         return contentNode.ToString();
     }
+
+    /// <summary>安全索引：仅当节点是 JSON 对象时才取键，否则返回 null（?.只防 null 不防类型错误，避免 "The node must be of type 'JsonObject'"）。</summary>
+    private static JsonNode? JGet(JsonNode? node, string key)
+        => node is JsonObject o ? o[key] : null;
 
     private static string Truncate(string s, int n) => s.Length <= n ? s : s[..n] + "...";
 
