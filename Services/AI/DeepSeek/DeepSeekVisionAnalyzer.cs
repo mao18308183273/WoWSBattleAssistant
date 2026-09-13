@@ -643,7 +643,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         req.Headers.TryAddWithoutValidation("sec-fetch-site", "same-origin");
         req.Headers.Add("Origin", "https://chat.deepseek.com");
         req.Headers.Referrer = new Uri("https://chat.deepseek.com/");
-        req.Headers.TryAddWithoutValidation("x-client-version", "2.3.0");
+        req.Headers.TryAddWithoutValidation("x-client-version", "2.5.0");
         req.Headers.TryAddWithoutValidation("x-client-platform", "web");
         req.Headers.TryAddWithoutValidation("x-client-bundle-id", "com.deepseek.chat");
         req.Headers.TryAddWithoutValidation("x-client-locale", "zh_CN");
@@ -661,10 +661,11 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
         var node = JsonNode.Parse(text)
             ?? throw new InvalidOperationException($"{req.RequestUri?.AbsolutePath} 响应不是合法 JSON。");
-        var code = node["code"]?.GetValue<int>();
+        // 兼容新协议(2026-09 官网更新)：错误码在 data.biz_code；旧协议在顶层 code
+        var code = node["data"]?["biz_code"]?.GetValue<int>() ?? node["code"]?.GetValue<int>();
         if (code != 0)
         {
-            var msg = node["msg"]?.ToString() ?? node["data"]?["biz_msg"]?.ToString() ?? "";
+            var msg = node["data"]?["biz_msg"]?.ToString() ?? node["msg"]?.ToString() ?? "";
             // 40003 = Token 无效或过期，给出明确指引
             if (code == 40003)
             {
@@ -712,8 +713,14 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
             var text = await resp.Content.ReadAsStringAsync(cts.Token);
             var node = JsonNode.Parse(text);
-            if (node?["code"]?.GetValue<int>() != 0) return null;
-            return node["data"]?["biz_data"]?["token"]?.ToString();
+            if (node == null) return null;
+            // 兼容新协议(2026-09)：错误码在 data.biz_code；旧协议在顶层 code
+            var code = node["data"]?["biz_code"]?.GetValue<int>() ?? node["code"]?.GetValue<int>();
+            if (code != 0) return null;
+            // 兼容多种 token 位置：data.biz_data.token / data.user.token / data.token
+            return node["data"]?["biz_data"]?["token"]?.ToString()
+                ?? node["data"]?["user"]?["token"]?.ToString()
+                ?? node["data"]?["token"]?.ToString();
         }
         catch { return null; }
     }
@@ -741,9 +748,16 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             if (!resp.IsSuccessStatusCode) return (false, null, null);
             var text = await resp.Content.ReadAsStringAsync(cts.Token);
             var node = JsonNode.Parse(text);
-            if (node?["code"]?.GetValue<int>() != 0) return (false, null, null);
-            var biz = node["data"]?["biz_data"];
-            return (true, biz?["id"]?.ToString(), biz?["plan"]?.ToString());
+            if (node == null) return (false, null, null);
+            // 兼容新协议(2026-09)：错误码在 data.biz_code；旧协议在顶层 code
+            var code = node["data"]?["biz_code"]?.GetValue<int>() ?? node["code"]?.GetValue<int>();
+            if (code != 0) return (false, null, null);
+            // 优先 data.biz_data（旧协议），兼容 data.user（新协议）
+            var user = node["data"]?["biz_data"] ?? node["data"]?["user"];
+            if (user == null) return (false, null, null);
+            var userId = user["id"]?.ToString() ?? user["user_id"]?.ToString();
+            var plan = user["plan"]?.ToString() ?? user["chat"]?["plan"]?.ToString();
+            return (true, userId, plan);
         }
         catch { return (false, null, null); }
     }
