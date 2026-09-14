@@ -169,6 +169,19 @@ public static class WgApiClient
             var name = p.Player?.Trim() ?? "";
             var hasColon = name.Contains(':');
 
+            // bot/AI（行动/剧情等 PVE 模式）：不查战绩，直接标注 AI
+            if (p.IsBot)
+            {
+                return new PlayerThreatInfo
+                {
+                    UserName = name,
+                    ShipName = p.Ship,
+                    Relation = p.Relation,
+                    HasColon = hasColon,
+                    IsBot = true,
+                };
+            }
+
             // 未搜到：可能是人机/隐藏/名字不匹配
             if (!nameToId.TryGetValue(name, out var accountId))
             {

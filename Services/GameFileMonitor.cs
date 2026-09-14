@@ -97,8 +97,10 @@ public sealed class GameFileMonitor
 
                 var shipParams = vo["ship_params"]?.ToJsonString();
 
-                // 过滤 bot（id <= 30，出现在剧情/护航模式中）
-                if (playerId <= 30) continue;
+                // bot（playerId <= 30，出现在剧情/护航/行动等 PVE 模式中）不丢弃，
+                // 而是标记 IsBot=true 保留：这样行动模式的敌方 AI 阵容、舰船参数都能进入知识库，
+                // 且威胁清单会明确标注 [AI] 而不是让敌我信息缺失。
+                var isBot = playerId <= 30;
 
                 result.Players.Add(new DetectedPlayer
                 {
@@ -107,6 +109,7 @@ public sealed class GameFileMonitor
                     ShipRawName = shipRawName,
                     ShipParams = shipParams,
                     Relation = relation,
+                    IsBot = isBot,
                 });
             }
 
@@ -228,4 +231,7 @@ public sealed class DetectedPlayer
 
     /// <summary>阵营: 0=自己, 1=队友, 2=敌方</summary>
     public int Relation { get; set; }
+
+    /// <summary>是否为 bot/AI（行动/剧情等 PVE 模式的电脑玩家；不查战绩，威胁清单标注 [AI]）</summary>
+    public bool IsBot { get; set; }
 }

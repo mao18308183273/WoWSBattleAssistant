@@ -36,6 +36,9 @@ public sealed class BattleAnalysisRequest
     /// <summary>阵容是否来自自动检测（true=tempArenaInfo.json 解析，100%准确无需AI验证）。</summary>
     public bool LineupFromAutoDetect { get; set; }
 
+    /// <summary>本局模式（如 行动/随机/排位/剧情 等；来自 tempArenaInfo.json matchGroup，可能为空）。</summary>
+    public string BattleMode { get; set; } = string.Empty;
+
     /// <summary>流式输出回调。AI 每生成一段文本就调用一次，用于实时更新 UI。</summary>
     public Action<string>? OnStreamChunk { get; set; }
 

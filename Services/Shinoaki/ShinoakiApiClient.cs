@@ -196,6 +196,20 @@ public sealed class ShinoakiApiClient
         var hasColon = name.Contains(':');
         var relation = pair.Relation;
 
+        // bot/AI（行动/剧情等 PVE 模式）：不查战绩，直接标注 AI，避免向战绩站发无效请求
+        if (pair.IsBot)
+        {
+            AppLog.Info($"shinoaki 查询: [{relation switch { 0 => "自己", 1 => "队友", 2 => "敌方", _ => "?" }}] {name} ({ship}) [AI bot，跳过查询]");
+            return new PlayerThreatInfo
+            {
+                UserName = name,
+                ShipName = ship,
+                Relation = relation,
+                HasColon = hasColon,
+                IsBot = true
+            };
+        }
+
         AppLog.Info($"shinoaki 查询: [{relation switch { 0 => "自己", 1 => "队友", 2 => "敌方", _ => "?" }}] {name} ({ship})");
 
         // 只查询、不判定。搜索结果和冒号特征都交给 AI 综合判断。

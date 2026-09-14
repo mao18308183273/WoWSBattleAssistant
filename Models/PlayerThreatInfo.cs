@@ -42,11 +42,18 @@ public sealed class PlayerThreatInfo
 
     public string ErrorMessage { get; set; } = string.Empty;
 
+    /// <summary>是否为 bot/AI（行动/剧情等 PVE 模式；不查战绩，直接标记，无需人机判断）</summary>
+    public bool IsBot { get; set; }
+
     /// <summary>格式化为给 AI 看的紧凑一行文本（只提供数据，不做判定）</summary>
     public string ToAiLine()
     {
         var colonTag = HasColon ? "名字含冒号" : "名字不含冒号";
         var sideTag = Relation switch { 0 => "自己", 1 => "队友", 2 => "敌方", _ => "未知" };
+
+        // bot/AI：行动/剧情等 PVE 模式的电脑玩家，直接标注，AI 不必做真人/人机判断
+        if (IsBot)
+            return $"  - [{sideTag}] {UserName}（{ShipName}）: [AI bot] PVE 电脑玩家，不是真人，无战绩数据，{colonTag}";
 
         if (HasError)
             return $"  - [{sideTag}] {UserName}（{ShipName}）: 战绩查询失败（{ErrorMessage}），{colonTag}";
@@ -71,4 +78,7 @@ public sealed class PlayerShipPair
     public string Ship { get; set; } = string.Empty;
     /// <summary>阵营: 0=自己, 1=队友, 2=敌方</summary>
     public int Relation { get; set; }
+
+    /// <summary>是否为 bot/AI（行动/剧情等 PVE 模式；不查战绩）</summary>
+    public bool IsBot { get; set; }
 }

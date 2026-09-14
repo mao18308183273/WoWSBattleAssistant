@@ -54,6 +54,7 @@ public partial class MainWindow : Window
 
     /// <summary>是否由自动检测填充了阵容（true=无需 AI 验证，数据 100%准确）</summary>
     private bool _lineupFromAutoDetect;
+    private string _currentBattleMode = ""; // 本局模式（行动/随机/排位等，来自 tempArenaInfo）
 
     /// <summary>当前是否为自动模式</summary>
     private bool _isAutoMode = true;
@@ -353,6 +354,7 @@ public partial class MainWindow : Window
         // 判断是否新对局：tempArenaInfo 的 dateTime 变了就是新一局
         var newBattleKey = detection.BattleStartTime;
         if (string.IsNullOrEmpty(newBattleKey)) newBattleKey = Guid.NewGuid().ToString();
+        _currentBattleMode = detection.BattleType ?? "";
         if (_currentBattleKey != newBattleKey)
         {
             // 新对局 → 清空上一局的对话上下文，开始全新分析会话
@@ -371,10 +373,12 @@ public partial class MainWindow : Window
         {
             string displayName;
 
-            // 1) 优先使用 tempArenaInfo.json 本身提供的舰船名（如果有）
-            if (!string.IsNullOrWhiteSpace(p.ShipRawName))
+            // 1) 优先使用 tempArenaInfo.json 本身提供的舰船名（如果有），
+            //    但"纯等级"（如 "X"）或空值视为无效，回退到知识库 shipId 映射
+            var raw = p.ShipRawName?.Trim() ?? "";
+            if (!string.IsNullOrWhiteSpace(raw) && !IsTierOnlyName(raw))
             {
-                displayName = p.ShipRawName.Trim();
+                displayName = raw;
             }
             // 2) 知识库已加载 → 按 shipId 精确映射
             else if (_database.IsLoaded)
@@ -391,7 +395,8 @@ public partial class MainWindow : Window
             {
                 Player = p.PlayerName,
                 Ship = displayName,
-                Relation = p.Relation
+                Relation = p.Relation,
+                IsBot = p.IsBot
             };
             _playerShipPairs.Add(pair);
             allShipNames.Add(displayName);
@@ -753,7 +758,7 @@ public partial class MainWindow : Window
     {
         var sb = new StringBuilder();
         if (req.LineupFromAutoDetect)
-            sb.AppendLine("分析本局。阵营数据由游戏内部文件精确解析。图片：阵容+小地图截图。");
+            sb.AppendLine("分析本局。阵营数据由游戏内部文件精确解析。图片：小地图截图。");
         else
             sb.AppendLine("分析本局。图片：阵容面板截图+小地图截图。");
         sb.AppendLine($"我的战舰：{req.MyShip}");
@@ -1382,6 +1387,7 @@ public partial class MainWindow : Window
                 PlayerThreatText = playerThreatText,
                 SystemPrompt = _settings.SystemPrompt,
                 LineupFromAutoDetect = _lineupFromAutoDetect,
+                BattleMode = _currentBattleMode,
                 // 同局重复分析 → 复用对话上下文，AI 知道上次的分析结果
                 Conversation = _conversation,
                 // 流式回调：遇到 --- 分隔符后只缓存不显示，点击「详细」时才渲染
@@ -1512,6 +1518,11 @@ public partial class MainWindow : Window
             .Where(s => !string.IsNullOrEmpty(s))
             .ToList();
     }
+
+    /// <summary>判断字符串是否只是罗马数字等级（如 "X"、"VIII"）——tempArenaInfo 个别模式下
+    /// ship_name 字段只返回等级时，不能当船名用，需回退到 shipId 知识库映射。</summary>
+    private static bool IsTierOnlyName(string s)
+        => s.Length <= 4 && s.All(c => c is 'I' or 'V' or 'X' or 'L' or 'C' or 'D' or 'M' or 'i' or 'v' or 'x');
 
     private static int HitCount(string kbText) => kbText.Count(c => c == '【');
 
