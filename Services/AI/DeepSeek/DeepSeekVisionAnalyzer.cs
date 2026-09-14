@@ -258,6 +258,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         using var reader = new StreamReader(stream, Encoding.UTF8);
         var (content, messageId) = await ReadSseAsync(reader, onChunk, ct);
         AppLog.Info($"DeepSeek completion 完成,正文长度 {content.Length}");
+        AppLog.Info($"DeepSeek completion 正文预览: {Truncate(content.Replace('\n', ' ').Replace('\r', ' '), 200)}");
         return new ChatResult { SessionId = realSessionId, MessageId = messageId, Content = content };
     }
 
@@ -416,6 +417,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         Exception? lastEx = null;
         for (int attempt = 0; attempt < 3; attempt++)
         {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try
             {
                 var url = $"https://hif-{kind}.deepseek.com/query";
@@ -428,10 +430,14 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
                 req.Headers.Referrer = new Uri("https://chat.deepseek.com/");
                 req.Headers.Add("Origin", "https://chat.deepseek.com");
 
-                using var resp = await Http.SendAsync(req, ct);
+                // 独立短超时：hif 域名网络波动时快速失败快速重试，避免挂满共享 HttpClient 的超时
+                using var hifCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                hifCts.CancelAfter(TimeSpan.FromSeconds(8));
+
+                using var resp = await Http.SendAsync(req, hifCts.Token);
                 if (!resp.IsSuccessStatusCode)
                     throw new InvalidOperationException($"获取 hif-{kind} 失败: {resp.StatusCode}");
-                var json = await resp.Content.ReadAsStringAsync(ct);
+                var json = await resp.Content.ReadAsStringAsync(hifCts.Token);
                 var node = JsonNode.Parse(json);
                 var value = JGet(JGet(JGet(node, "data"), "biz_data"), "value")?.ToString()
                     ?? throw new InvalidOperationException($"hif-{kind} 响应缺少 value。");
@@ -449,6 +455,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
                     if (kind == "dliq") _hifDliq = (value, expiry);
                     else _hifLeim = (value, expiry);
                 }
+                AppLog.Info($"hif-{kind} 获取成功,用时 {sw.ElapsedMilliseconds}ms,TTL {ttl}s");
                 return value;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -456,7 +463,16 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
                 lastEx = ex;
                 if (attempt < 2)
                 {
-                    AppLog.Warn($"hif-{kind} 第{attempt+1}次失败: {ex.Message}，2秒后重试");
+                    AppLog.Warn($"hif-{kind} 第{attempt+1}次失败({sw.ElapsedMilliseconds}ms): {ex.Message}，2秒后重试");
+                    await Task.Delay(2000, ct);
+                }
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                lastEx = new TimeoutException($"hif-{kind} 请求 8 秒超时。");
+                if (attempt < 2)
+                {
+                    AppLog.Warn($"hif-{kind} 第{attempt+1}次失败({sw.ElapsedMilliseconds}ms): 8秒超时，2秒后重试");
                     await Task.Delay(2000, ct);
                 }
             }
