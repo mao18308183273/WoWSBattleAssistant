@@ -216,7 +216,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
         // 5~6) completion 的 PoW + SSE
         await EnsureHifAsync(ct);
-        AppLog.Info("DeepSeek hif 令牌就绪");
+        AppLog.Info($"DeepSeek hif 令牌就绪（dliq={GetHifCachedValue("dliq") != null}, leim={GetHifCachedValue("leim") != null}）");
         var powHeader = await BuildPowHeaderAsync("/api/v0/chat/completion", ct);
         AppLog.Info("DeepSeek completion PoW 求解完成");
 
@@ -236,8 +236,20 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         var req = new HttpRequestMessage(HttpMethod.Post, $"{BaseHost}/api/v0/chat/completion");
         ApplyCommonHeaders(req);
         req.Headers.TryAddWithoutValidation("x-ds-pow-response", powHeader);
-        req.Headers.TryAddWithoutValidation("x-hif-dliq", await GetHifAsync("dliq", ct));
-        req.Headers.TryAddWithoutValidation("x-hif-leim", await GetHifAsync("leim", ct));
+        var hifDliq = await GetHifAsync("dliq", ct);
+        var hifLeim = await GetHifAsync("leim", ct);
+        if (hifDliq != null)
+            req.Headers.TryAddWithoutValidation("x-hif-dliq", hifDliq);
+        else
+            AppLog.Warn("x-hif-dliq 缺失（hif-dliq 域名不可达，已降级跳过该头，仅带 x-hif-leim 尝试）");
+        if (hifLeim != null)
+            req.Headers.TryAddWithoutValidation("x-hif-leim", hifLeim);
+        else
+            AppLog.Warn("x-hif-leim 缺失");
+        if (hifDliq == null && hifLeim == null)
+            throw new InvalidOperationException(
+                "无法获取 DeepSeek 验证令牌(hif-dliq/hif-leim)：两个验证服务器域名均不可达（网络或 DNS 异常）。\n" +
+                "建议：检查网络后重试，或在设置中切换 AI 提供方到【智谱 GLM】/【通义千问】（国内直连更稳定）。");
         req.Content = new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json");
 
         using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
@@ -395,25 +407,43 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
     private static readonly object HifLock = new();
     private static (string value, DateTime expiry) _hifDliq = ("", DateTime.MinValue);
     private static (string value, DateTime expiry) _hifLeim = ("", DateTime.MinValue);
+    private static DateTime _hifDliqFailUntil = DateTime.MinValue;
+    private static DateTime _hifLeimFailUntil = DateTime.MinValue;
 
-    /// <summary>过期则刷新两个 hif 令牌。</summary>
+    /// <summary>过期则刷新两个 hif 令牌。任一失败不抛异常（降级），由调用方决定是否继续。</summary>
     private static async Task EnsureHifAsync(CancellationToken ct)
     {
         await GetHifAsync("dliq", ct);
         await GetHifAsync("leim", ct);
     }
 
-    private static async Task<string> GetHifAsync(string kind, CancellationToken ct)
+    /// <summary>返回缓存的 hif 值（不触发网络），获取失败时返回 null。</summary>
+    private static string? GetHifCachedValue(string kind)
+    {
+        lock (HifLock)
+        {
+            var cur = kind == "dliq" ? _hifDliq : _hifLeim;
+            return (!string.IsNullOrEmpty(cur.value) && cur.expiry > DateTime.UtcNow) ? cur.value : null;
+        }
+    }
+
+    private static async Task<string?> GetHifAsync(string kind, CancellationToken ct)
     {
         (string value, DateTime expiry) cur;
+        DateTime failUntil;
         lock (HifLock)
         {
             cur = kind == "dliq" ? _hifDliq : _hifLeim;
+            failUntil = kind == "dliq" ? _hifDliqFailUntil : _hifLeimFailUntil;
         }
         if (!string.IsNullOrEmpty(cur.value) && cur.expiry > DateTime.UtcNow)
             return cur.value;
 
-        // 最多重试 2 次（共 3 次尝试），兜底异常统一包装为友好提示
+        // 失败冷却期（5 分钟）内不再重试，直接返回 null（避免每次分析都干等 8s*3 次重试）
+        if (failUntil > DateTime.UtcNow)
+            return null;
+
+        // 最多重试 2 次（共 3 次尝试）
         Exception? lastEx = null;
         for (int attempt = 0; attempt < 3; attempt++)
         {
@@ -478,11 +508,14 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             }
         }
 
-        // DNS / 网络异常包装为友好提示，避免用户看到原始 SocketException
-        throw new InvalidOperationException(
-            $"无法获取 DeepSeek 验证令牌(hif-{kind})：网络或 DNS 异常。\n" +
-            $"可能原因：deepseek.com 被 DNS 屏蔽 / 验证服务器域名(hif-{kind}.deepseek.com)不可达 / 网络受限。\n" +
-            $"建议：设置 → 切换 AI 提供方到【智谱 GLM】或【通义千问】（国内直连更稳定）。");
+        // 3 次都失败：记录冷却 5 分钟，返回 null 交由调用方降级处理（不再抛异常阻断整条链路）
+        lock (HifLock)
+        {
+            if (kind == "dliq") _hifDliqFailUntil = DateTime.UtcNow + TimeSpan.FromMinutes(5);
+            else _hifLeimFailUntil = DateTime.UtcNow + TimeSpan.FromMinutes(5);
+        }
+        AppLog.Warn($"hif-{kind} 获取失败已冷却 5 分钟。最后一次错误: {lastEx?.Message}");
+        return null;
     }
 
     // ===== SSE 解析 =====
