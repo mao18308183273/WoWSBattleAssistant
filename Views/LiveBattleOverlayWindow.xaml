@@ -1,0 +1,70 @@
+<Window x:Class="WoWSBattleAssistant.Views.LiveBattleOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="实时战况"
+        Width="330" Height="200"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        ResizeMode="NoResize"
+        Topmost="True"
+        ShowInTaskbar="False"
+        Background="Transparent"
+        ShowActivated="False"
+        WindowStartupLocation="Manual">
+
+    <Border x:Name="RootBorder" Background="#F00F1117" BorderBrush="#FF38BDF8"
+            BorderThickness="1" CornerRadius="10">
+        <Grid Margin="10,8,10,6">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 状态行：连接状态 + 对局状态 -->
+            <Grid Grid.Row="0" Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="TxtStatus" Grid.Column="0" Text="⚪ 等待模组连接…" Foreground="#FF9BA4B8"
+                           FontSize="12" FontWeight="Bold" VerticalAlignment="Center"/>
+                <TextBlock x:Name="TxtPlayer" Grid.Column="1" Text="" Foreground="#FF7EB8FF" FontSize="11"
+                           TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                <Button x:Name="BtnClose" Grid.Column="2" Content="✕" FontSize="10" Padding="4,1"
+                        Background="Transparent" Foreground="#FF9BA4B8" BorderThickness="0"
+                        Cursor="Hand" Click="BtnClose_Click" Margin="6,0,0,0"/>
+            </Grid>
+
+            <!-- 最近事件 -->
+            <Border Grid.Row="1" Background="#FF141823" CornerRadius="7" Margin="0,0,0,6" Padding="6,4">
+                <StackPanel>
+                    <TextBlock Text="最近事件" Foreground="#FF5D6575" FontSize="9" Margin="0,0,0,2"/>
+                    <TextBlock x:Name="TxtEvents" Text="（暂无事件）" Foreground="#FFC9D1E0" FontSize="10"
+                               TextWrapping="Wrap" LineHeight="16"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 快捷操作 -->
+            <Grid Grid.Row="2" Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button x:Name="BtnCapture" Grid.Column="0" Content="📸 截小地图（自动放大）" FontSize="12"
+                        FontWeight="Bold" Padding="6,5" Margin="0,0,3,0" Cursor="Hand"
+                        Background="#FF1E5A8F" Foreground="White" BorderThickness="0"
+                        Click="BtnCapture_Click"/>
+                <Button x:Name="BtnAnalyze" Grid.Column="1" Content="🤖 AI 分析" FontSize="12"
+                        FontWeight="Bold" Padding="6,5" Margin="3,0,0,0" Cursor="Hand"
+                        Background="#FF15803D" Foreground="White" BorderThickness="0"
+                        Click="BtnAnalyze_Click"/>
+            </Grid>
+
+            <!-- 底部提示 -->
+            <TextBlock x:Name="TxtFooter" Grid.Row="3" Text="拖拽移动 · 右键隐藏" Foreground="#FF5D6575" FontSize="9"/>
+        </Grid>
+    </Border>
+</Window>

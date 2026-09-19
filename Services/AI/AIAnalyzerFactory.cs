@@ -43,7 +43,8 @@ public static class AIAnalyzerFactory
             catch { /* 自动获取失败不影响后续流程 */ }
         }
 
-        return new DeepSeek.DeepSeekVisionAnalyzer(token, cookie, settings.EnableDeepSeekThinking);
+        return new DeepSeek.DeepSeekVisionAnalyzer(token, cookie, settings.EnableDeepSeekThinking,
+            settings.DeepSeekModelType);
     }
 
     /// <summary>列出各提供方可选模型</summary>

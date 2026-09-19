@@ -24,6 +24,10 @@ public sealed class BattleAnalysisRequest
     /// 由 MainWindow 在分析前注入，AI 据此而非"看玩家名风格"判断威胁。</summary>
     public string PlayerThreatText { get; set; } = string.Empty;
 
+    /// <summary>官方 ModsAPI 模组采集的实时对局数据摘要（血量/缎带/统计/事件，可空）。
+    /// 由 MainWindow 在分析前注入，AI 据此了解对局进行到此刻的事实。</summary>
+    public string LiveBattleDataText { get; set; } = string.Empty;
+
     /// <summary>系统提示词（空则用各 Analyzer 内置默认）</summary>
     public string SystemPrompt { get; set; } = string.Empty;
 

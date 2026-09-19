@@ -43,6 +43,7 @@ public partial class SettingsWindow : Window
             DeepSeekToken = s.DeepSeekToken,
             DeepSeekCookie = s.DeepSeekCookie,
             EnableDeepSeekThinking = s.EnableDeepSeekThinking,
+            DeepSeekModelType = s.DeepSeekModelType,
             EnableVoiceControl = s.EnableVoiceControl,
             VoiceConfidenceThreshold = s.VoiceConfidenceThreshold,
             ShipDataPath = s.ShipDataPath,
@@ -57,6 +58,10 @@ public partial class SettingsWindow : Window
             GamePath = s.GamePath,
             ApiBackend = s.ApiBackend,
             WgApplicationId = s.WgApplicationId,
+            EnableWowsMod = s.EnableWowsMod,
+            EnableLiveOverlay = s.EnableLiveOverlay,
+            LiveOverlayLeft = s.LiveOverlayLeft,
+            LiveOverlayTop = s.LiveOverlayTop,
         };
     }
 
@@ -86,6 +91,7 @@ public partial class SettingsWindow : Window
         PbDeepSeekToken.Password = _draft.DeepSeekToken;
         TxtDeepSeekCookie.Text = _draft.DeepSeekCookie;
         ChkDsThinking.IsChecked = _draft.EnableDeepSeekThinking;
+        SelectModelType(_draft.DeepSeekModelType);
 
         // 语音控制
         ChkVoiceControl.IsChecked = _draft.EnableVoiceControl;
@@ -127,6 +133,106 @@ public partial class SettingsWindow : Window
 
         UpdateRegionText();
         TxtSystemPrompt.Text = _draft.SystemPrompt;
+
+        // 官方 ModsAPI 模组
+        ChkEnableMod.IsChecked = _draft.EnableWowsMod;
+        ChkLiveOverlay.IsChecked = _draft.EnableLiveOverlay;
+        RefreshModStatus();
+    }
+
+    /// <summary>刷新模组安装状态显示（根据当前游戏目录实时检测）。</summary>
+    private void RefreshModStatus()
+    {
+        var gamePath = TxtGamePath.Text.Trim();
+        try
+        {
+            var version = WowsModInstaller.ResolveVersionLabel(gamePath);
+            if (string.IsNullOrEmpty(version))
+            {
+                TxtModStatus.Text = "⬜ 未找到游戏目录（先在下方填写并验证游戏安装目录）";
+                TxtModStatus.Foreground = System.Windows.Media.Brushes.Gray;
+                return;
+            }
+            var installed = WowsModInstaller.IsInstalled(gamePath);
+            if (installed)
+            {
+                TxtModStatus.Text = $"✅ 模组已安装（游戏版本 {version}，PnFMods\\WowsBAMod）。重启游戏后生效，数据写入游戏内 {WowsModInstaller.GetRuntimeModDataDir(TxtGamePath.Text.Trim()) ?? WowsModInstaller.GetModDataDir()}";
+                TxtModStatus.Foreground = System.Windows.Media.Brushes.LimeGreen;
+            }
+            else
+            {
+                TxtModStatus.Text = $"⬜ 模组未安装（检测到游戏版本 {version}，点击「自动安装模组」一键安装）";
+                TxtModStatus.Foreground = System.Windows.Media.Brushes.Orange;
+            }
+        }
+        catch (Exception ex)
+        {
+            TxtModStatus.Text = $"⚠ 模组状态检测失败：{ex.Message}";
+            TxtModStatus.Foreground = System.Windows.Media.Brushes.OrangeRed;
+        }
+    }
+
+    private void BtnInstallMod_Click(object sender, RoutedEventArgs e)
+    {
+        var gamePath = TxtGamePath.Text.Trim();
+        if (string.IsNullOrWhiteSpace(gamePath))
+        {
+            MessageBox.Show("请先在上方填写《战舰世界》游戏安装目录。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var (ok, msg) = WowsModInstaller.Install(gamePath);
+        TxtModStatus.Text = msg;
+        TxtModStatus.Foreground = ok ? System.Windows.Media.Brushes.LimeGreen : System.Windows.Media.Brushes.OrangeRed;
+        if (ok) AppLog.Info($"模组已安装: {msg}");
+    }
+
+    private void BtnUninstallMod_Click(object sender, RoutedEventArgs e)
+    {
+        var gamePath = TxtGamePath.Text.Trim();
+        if (string.IsNullOrWhiteSpace(gamePath))
+        {
+            MessageBox.Show("请先在上方填写《战舰世界》游戏安装目录。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+        var confirm = MessageBox.Show("确认卸载 WowsBAMod 模组？（只删除本模组文件，不影响你的其他模组与游戏本体）",
+            "卸载模组", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.OK) return;
+        var (ok, msg) = WowsModInstaller.Uninstall(gamePath);
+        TxtModStatus.Text = msg;
+        TxtModStatus.Foreground = ok ? System.Windows.Media.Brushes.LimeGreen : System.Windows.Media.Brushes.OrangeRed;
+        if (ok) AppLog.Info($"模组已卸载: {msg}");
+    }
+
+    private void BtnOpenModData_Click(object sender, RoutedEventArgs e)
+    {
+        var dir = WowsModInstaller.GetRuntimeModDataDir(TxtGamePath.Text.Trim()) ?? WowsModInstaller.GetModDataDir();
+        try
+        {
+            Directory.CreateDirectory(dir);
+            System.Diagnostics.Process.Start("explorer.exe", $"\"{dir}\"");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"打开数据目录失败：{ex.Message}", "提示");
+        }
+    }
+
+    private void BtnOpenModFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var resMods = WowsModInstaller.ResolveResModsDir(TxtGamePath.Text.Trim());
+        if (resMods == null)
+        {
+            MessageBox.Show("未找到游戏 res_mods 目录，请先填写并验证游戏安装目录。", "提示");
+            return;
+        }
+        try
+        {
+            System.Diagnostics.Process.Start("explorer.exe", $"\"{resMods}\"");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"打开模组目录失败：{ex.Message}", "提示");
+        }
     }
 
     private void UpdateShipCount()
@@ -407,6 +513,7 @@ public partial class SettingsWindow : Window
         _draft.DeepSeekToken = PbDeepSeekToken.Password;
         _draft.DeepSeekCookie = TxtDeepSeekCookie.Text;
         _draft.EnableDeepSeekThinking = ChkDsThinking.IsChecked == true;
+        _draft.DeepSeekModelType = GetModelType();
         _draft.EnableVoiceControl = ChkVoiceControl.IsChecked == true;
         _draft.VoiceConfidenceThreshold = Math.Round(SldVoiceThreshold.Value, 1);
         _draft.EnablePowerOverlay = ChkPowerOverlay.IsChecked == true;
@@ -415,6 +522,8 @@ public partial class SettingsWindow : Window
         _draft.Server = CbServer.SelectedItem?.ToString() ?? "cn";
         _draft.GamePath = TxtGamePath.Text.Trim();
         _draft.ApiBackend = (ApiBackend)CbApiBackend.SelectedIndex;
+        _draft.EnableWowsMod = ChkEnableMod.IsChecked == true;
+        _draft.EnableLiveOverlay = ChkLiveOverlay.IsChecked == true;
 
         // 校验：API Key 缺失时仅提醒，不阻止保存（悬浮窗等非 AI 功能不需要 Key）
         if (_draft.AiProvider == AiProvider.Glm && string.IsNullOrWhiteSpace(_draft.GlmApiKey))
@@ -447,6 +556,7 @@ public partial class SettingsWindow : Window
         dst.DeepSeekToken = src.DeepSeekToken;
         dst.DeepSeekCookie = src.DeepSeekCookie;
         dst.EnableDeepSeekThinking = src.EnableDeepSeekThinking;
+        dst.DeepSeekModelType = src.DeepSeekModelType;
         dst.EnableVoiceControl = src.EnableVoiceControl;
         dst.VoiceConfidenceThreshold = src.VoiceConfidenceThreshold;
         dst.EnablePowerOverlay = src.EnablePowerOverlay;
@@ -462,6 +572,35 @@ public partial class SettingsWindow : Window
         dst.GamePath = src.GamePath;
         dst.ApiBackend = src.ApiBackend;
         dst.WgApplicationId = src.WgApplicationId;
+        dst.EnableWowsMod = src.EnableWowsMod;
+        dst.EnableLiveOverlay = src.EnableLiveOverlay;
+        dst.LiveOverlayLeft = src.LiveOverlayLeft;
+        dst.LiveOverlayTop = src.LiveOverlayTop;
+    }
+
+    /// <summary>按模型类型选中下拉项（未知值回退到 default）</summary>
+    private void SelectModelType(string modelType)
+    {
+        foreach (var item in CmbDsModelType.Items)
+        {
+            if (item is ComboBoxItem cbi && string.Equals(cbi.Tag?.ToString(), modelType, StringComparison.OrdinalIgnoreCase))
+            {
+                CmbDsModelType.SelectedItem = item;
+                return;
+            }
+        }
+        CmbDsModelType.SelectedIndex = 0; // 默认 default
+    }
+
+    /// <summary>读取下拉选择的模型类型</summary>
+    private string GetModelType()
+    {
+        if (CmbDsModelType.SelectedItem is ComboBoxItem cbi)
+        {
+            var tag = cbi.Tag?.ToString();
+            if (tag is "default" or "vision") return tag;
+        }
+        return "default";
     }
 
     private void BtnRefreshLog_Click(object sender, RoutedEventArgs e)

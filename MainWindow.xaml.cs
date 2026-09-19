@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private readonly ShipDatabase _database = new();
     private readonly GameFileMonitor _fileMonitor = new();
+    private ModDataMonitor? _modDataMonitor;
     private VoiceController? _voiceController;
     private DispatcherTimer? _pollingTimer;
     private CancellationTokenSource? _cts;
@@ -51,6 +52,9 @@ public partial class MainWindow : Window
 
     /// <summary>双方战力对比悬浮窗</summary>
     private Views.PowerOverlayWindow? _powerOverlay;
+
+    /// <summary>实时战况悬浮窗（官方模组连接状态 + 血量/伤害/事件）</summary>
+    private Views.LiveBattleOverlayWindow? _liveOverlay;
 
     /// <summary>是否由自动检测填充了阵容（true=无需 AI 验证，数据 100%准确）</summary>
     private bool _lineupFromAutoDetect;
@@ -84,6 +88,10 @@ public partial class MainWindow : Window
 
     /// <summary>当前对局的标识（tempArenaInfo 的 battleStartTime），用于判断是否同局，同局复用对话上下文</summary>
     private string? _currentBattleKey;
+
+    /// <summary>mod 侧对局开始时间戳（battle.json 的 ts）。tempArenaInfo 检测不可用时的双保险：
+    /// 值变化 = 新对局，自动断开上一局的 AI 会话上下文，防止跨局串记忆。</summary>
+    private string? _lastModBattleTs;
 
     /// <summary>自动检测到的新对局暂存（等待知识库加载后再处理）</summary>
     private BattleDetectionResult? _pendingDetection;
@@ -132,10 +140,14 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        Left = _settings.WindowLeft;
-        Top = _settings.WindowTop;
+        // 恢复窗口位置，并确保窗口至少部分落在可见屏幕内（防止上次最小化/换显示器后把 -32000 之类坐标存进设置导致窗口丢出屏幕）
+        double vsL = SystemParameters.VirtualScreenLeft, vsT = SystemParameters.VirtualScreenTop;
+        double vsW = SystemParameters.VirtualScreenWidth, vsH = SystemParameters.VirtualScreenHeight;
+        double w = Width, h = Height;
+        Left = Math.Max(vsL - w + 80, Math.Min(_settings.WindowLeft, vsL + vsW - 80));
+        Top = Math.Max(vsT - h + 60, Math.Min(_settings.WindowTop, vsT + vsH - 60));
         if (_settings.WindowWidth > 0) Width = _settings.WindowWidth;
-        if (_settings.WindowHeight > 0) Height = _settings.WindowHeight;
+        if (_settings.WindowHeight >= 830) Height = _settings.WindowHeight; // 只恢复 >= 新默认 830 的用户高度，旧压缩值一律用默认
 
         AppLog.Info($"WoWS Battle Assistant V4.5.0 启动 | 模式: {(_isAutoMode ? "自动" : "手动")} | 游戏路径: {_settings.GamePath}");
 
@@ -143,6 +155,21 @@ public partial class MainWindow : Window
         UpdateModeUI();
         InitVoiceControl();
         await LoadDatabaseAsync();
+
+        // 官方 ModsAPI 模组数据监控：设置开启且游戏目录有效时启用。
+        // 模组数据目录为游戏内 res_mods\PnFMods\WowsBAMod\data（mod 沙箱实际写入处）。
+        if (_settings.EnableWowsMod)
+        {
+            var modDataDir = WowsModInstaller.GetRuntimeModDataDir(_settings.GamePath)
+                             ?? WowsModInstaller.GetModDataDir();
+            _modDataMonitor = new ModDataMonitor(modDataDir);
+            var modInstalled = WowsModInstaller.IsInstalled(_settings.GamePath);
+            AppLog.Info($"模组数据监控: {(modInstalled ? "模组已安装" : "模组未安装（可在设置中一键安装）")}, 数据目录={modDataDir}");
+        }
+
+        // 实时战况悬浮窗：证明模组连接并显示对局实时状态
+        if (_settings.EnableLiveOverlay && _modDataMonitor != null)
+            EnsureLiveOverlay();
 
         if (_isAutoMode) StartAutoDetection();
     }
@@ -158,7 +185,7 @@ public partial class MainWindow : Window
         {
             AutoLineupPanel.Visibility = Visibility.Visible;
             BtnCaptureLineup.Visibility = Visibility.Collapsed;
-            TxtLineupTitle.Text = "双方阵容（自动检测）";
+            TxtLineupTitle.Text = "1. 双方阵容（自动检测）";
             TxtModeHint.Text = string.IsNullOrWhiteSpace(_settings.GamePath)
                 ? "⚠ 未配置游戏目录" : "";
             TxtModeHint.Foreground = string.IsNullOrWhiteSpace(_settings.GamePath)
@@ -168,7 +195,7 @@ public partial class MainWindow : Window
         {
             AutoLineupPanel.Visibility = Visibility.Collapsed;
             BtnCaptureLineup.Visibility = Visibility.Visible;
-            TxtLineupTitle.Text = "双方阵容（手动截取）";
+            TxtLineupTitle.Text = "1. 双方阵容（手动截取）";
             TxtModeHint.Text = "手动模式：截图+AI识别";
         }
 
@@ -300,6 +327,9 @@ public partial class MainWindow : Window
     {
         // 如果正在手动操作中，跳过自动检测
         if (_cts != null && !_cts.IsCancellationRequested) return;
+
+        // 顺带轮询官方模组输出的实时对局数据（纯只读文件，异常自吞）
+        _modDataMonitor?.CheckNow();
 
         try
         {
@@ -519,6 +549,46 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>按需创建并显示实时战况悬浮窗（官方模组连接状态 + 实时数据）</summary>
+    private void EnsureLiveOverlay()
+    {
+        if (_modDataMonitor == null) return;
+        if (_liveOverlay != null)
+        {
+            _liveOverlay.Show();
+            return;
+        }
+        _liveOverlay = new Views.LiveBattleOverlayWindow(_modDataMonitor, _settings.LiveOverlayLeft, _settings.LiveOverlayTop,
+            onCaptureMinimap: () => Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (BtnCaptureMinimap.IsEnabled) BtnCaptureMinimap_Click(this, new RoutedEventArgs());
+            })),
+            onAnalyze: () => Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (BtnAnalyze.IsEnabled) BtnAnalyze_Click(this, new RoutedEventArgs());
+            })));
+        _liveOverlay.Closed += (_, _) =>
+        {
+            if (_liveOverlay != null)
+            {
+                _settings.LiveOverlayLeft = _liveOverlay.Left;
+                _settings.LiveOverlayTop = _liveOverlay.Top;
+                SettingsStore.Save(_settings);
+            }
+            _liveOverlay = null;
+        };
+        _liveOverlay.Show();
+    }
+
+    /// <summary>根据设置启停实时战况悬浮窗（设置面板关闭时调用）</summary>
+    private void SyncLiveOverlay()
+    {
+        if (_settings.EnableLiveOverlay && _modDataMonitor != null)
+            EnsureLiveOverlay();
+        else
+            _liveOverlay?.Hide();
+    }
+
     /// <summary>主界面按钮：一键开关战力悬浮窗（不依赖设置项，手动随时用）</summary>
     private void BtnOverlay_Click(object sender, RoutedEventArgs e)
     {
@@ -572,6 +642,8 @@ public partial class MainWindow : Window
         _voiceController?.Dispose();
         _powerOverlay?.Close();
         _powerOverlay = null;
+        _liveOverlay?.Close();
+        _liveOverlay = null;
     }
 
     // ===== 语音控制 =====
@@ -767,6 +839,8 @@ public partial class MainWindow : Window
             sb.Append(req.KnowledgeBaseText);
         if (!string.IsNullOrWhiteSpace(req.PlayerThreatText))
             sb.Append(req.PlayerThreatText);
+        if (!string.IsNullOrWhiteSpace(req.LiveBattleDataText))
+            sb.Append("\n【实时战况】").Append(req.LiveBattleDataText);
         return sb.ToString();
     }
 
@@ -816,7 +890,11 @@ public partial class MainWindow : Window
 
     private async void BtnFollowUp_Click(object sender, RoutedEventArgs e)
     {
-        if (_conversation == null) return;
+        if (_conversation == null)
+        {
+            TxtStatus.Text = "请先完成一次分析，再使用追问。";
+            return;
+        }
         var question = TxtFollowUp.Text.Trim();
         if (string.IsNullOrEmpty(question)) return;
 
@@ -837,6 +915,8 @@ public partial class MainWindow : Window
                 Conversation = _conversation,
                 // 如果有新的小地图截图，附带之
                 ImageBase64 = _latestMinimapBase64 ?? "",
+                // 追问时也带上最新的模组实时数据，AI 可基于最新战况回答
+                LiveBattleDataText = _modDataMonitor?.GetLiveSummary() ?? "",
                 OnStreamChunk = chunk => Dispatcher.BeginInvoke(() =>
                 {
                     // 追加到结果区末尾
@@ -934,6 +1014,8 @@ public partial class MainWindow : Window
         if (_isAutoMode) StartAutoDetection();
         // 战力悬浮窗：设置关闭后按当前配置启停
         SyncPowerOverlay();
+        // 实时战况悬浮窗：设置关闭后按当前配置启停
+        SyncLiveOverlay();
     }
 
     private void BtnClear_Click(object sender, RoutedEventArgs e)
@@ -1008,14 +1090,14 @@ public partial class MainWindow : Window
         StatusBar.Visibility = vis;
         Step1Details.Visibility = vis;
         Step2Details.Visibility = vis;
-        BtnCollapse.Content = _collapsed ? "▼" : "▲";
+        BtnCollapse.Content = _collapsed ? "展开" : "收起";
         TxtFooter.Visibility = vis;
     }
 
     private void BtnCompact_Click(object sender, RoutedEventArgs e)
     {
         _compactMode = !_compactMode;
-        BtnCompact.Content = _compactMode ? "🗖" : "🗜";
+        BtnCompact.Content = _compactMode ? "完整" : "精简";
         BtnCompact.ToolTip = _compactMode ? "完整模式" : "精简模式";
 
         if (_compactMode)
@@ -1031,8 +1113,8 @@ public partial class MainWindow : Window
             ModeBar.Visibility = Visibility.Visible;
             LineupCard.Visibility = Visibility.Visible;
             MinimapCard.Visibility = Visibility.Visible;
-            Height = 760;
-            MinHeight = 600;
+            Height = 830;
+            MinHeight = 660;
         }
     }
 
@@ -1233,8 +1315,8 @@ public partial class MainWindow : Window
         UpdateAnalyzeButton();
     }
 
-    // ===== 步骤②：小地图（手动触发，使用已保存的区域）=====
-    private void BtnCaptureMinimap_Click(object sender, RoutedEventArgs e)
+    // ===== 步骤②：小地图（手动触发，使用已保存的区域；自动放大到最大提升清晰度）=====
+    private async void BtnCaptureMinimap_Click(object sender, RoutedEventArgs e)
     {
         if (_settings.MinimapRegion.IsEmpty)
         {
@@ -1247,7 +1329,42 @@ public partial class MainWindow : Window
         try
         {
             var region = _settings.MinimapRegion;
-            var shot = ScreenCaptureService.CaptureRegion(region);
+            BitmapSource? shot = null;
+
+            // 缩放方案：把游戏窗口置前 → 小地图放大到最大 → 截图 → 缩回。
+            // 缩放越大截图清晰度越高。全程容错：任何一步失败都降级为直接截图。
+            var gameWindow = GameInputHelper.FindGameWindow();
+            if (gameWindow != IntPtr.Zero)
+            {
+                this.Hide();
+                try
+                {
+                    await Task.Run(() =>
+                    {
+                        GameInputHelper.ZoomMinimapMax(() =>
+                        {
+                            var s = ScreenCaptureService.CaptureRegion(region);
+                            Dispatcher.Invoke(() => shot = s);
+                        });
+                    }).WaitAsync(TimeSpan.FromSeconds(12));
+                }
+                catch (TimeoutException)
+                {
+                    AppLog.Warn("小地图缩放截图超时，降级为直接截图");
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Warn($"小地图缩放截图失败（降级直接截图）: {ex.Message}");
+                }
+                finally
+                {
+                    this.Show();
+                    this.Activate();
+                }
+            }
+
+            // 降级：直接截当前画面（游戏窗口没找到/缩放失败）
+            shot ??= ScreenCaptureService.CaptureRegion(region);
             if (shot == null)
             {
                 TxtStatus.Text = "❌ 小地图截取失败（区域为空或屏幕不可用）";
@@ -1304,6 +1421,21 @@ public partial class MainWindow : Window
         {
             MessageBox.Show("请指定你的战舰。", "提示");
             return;
+        }
+
+        // 双保险：mod 侧对局时间戳变化 = 新对局（tempArenaInfo 自动检测未触发时仍生效），
+        // 断开上一局的 AI 会话上下文；同局内保持不变则继续复用同一 DeepSeek 网页会话。
+        var modBattleTs = _modDataMonitor?.CurrentBattleStartTs;
+        if (!string.IsNullOrEmpty(modBattleTs) && modBattleTs != _lastModBattleTs)
+        {
+            var switchedBattle = _lastModBattleTs != null; // 首次拿到不算换局
+            _lastModBattleTs = modBattleTs;
+            if (switchedBattle && _conversation != null)
+            {
+                _conversation = null;
+                FollowUpPanel.Visibility = Visibility.Collapsed;
+                AppLog.Info($"检测到新对局({modBattleTs})，对话上下文已重置");
+            }
         }
         if (_minimapImage == null)
         {
@@ -1385,6 +1517,7 @@ public partial class MainWindow : Window
                 AllShips = string.Join("、", allNames),
                 KnowledgeBaseText = kbText,
                 PlayerThreatText = playerThreatText,
+                LiveBattleDataText = _modDataMonitor?.GetLiveSummary() ?? "",
                 SystemPrompt = _settings.SystemPrompt,
                 LineupFromAutoDetect = _lineupFromAutoDetect,
                 BattleMode = _currentBattleMode,
@@ -1509,10 +1642,15 @@ public partial class MainWindow : Window
         return BuildPlayerThreatText(infos);
     }
 
+    /// <summary>
+    /// 解析舰船名列表。注意：不能用空格做分隔符——
+    /// 游戏数据中的舰船名是 "等级+空格+船名"（如 "IV 怀俄明"），
+    /// 用空格切分会把等级和船名拆开（"IV"、"怀俄明"），导致数量翻倍、知识库错配。
+    /// </summary>
     private static List<string> ParseNames(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return new List<string>();
-        return text.Split(new[] { ',', '，', '、', '\n', '\r', ' ' },
+        return text.Split(new[] { ',', '，', '、', '\n', '\r' },
                 StringSplitOptions.RemoveEmptyEntries)
             .Select(s => s.Trim())
             .Where(s => !string.IsNullOrEmpty(s))
@@ -1535,6 +1673,20 @@ public partial class MainWindow : Window
         sb.AppendLine();
         foreach (var info in infos)
             sb.AppendLine(info.ToAiLine());
+
+        // 敌方统计结论：防止 AI 在"清单无敌方条目"时凭空想象敌方。
+        // 行动/剧情等 PVE 模式下敌方全是 AI 电脑，tempArenaInfo 不收录敌方玩家条目。
+        var enemyCount = infos.Count(i => i.Relation == 2);
+        var enemyRealCount = infos.Count(i => i.Relation == 2 && !i.IsBot && i.SearchHit == true);
+        sb.AppendLine();
+        if (enemyCount == 0)
+        {
+            sb.AppendLine("【敌方统计结论】本局清单中没有[敌方]条目 → 本局没有敌方真人玩家（敌方全为 AI 电脑，或为行动/PVE 模式）。敌方威胁仅来自 AI 舰船（按知识库参数评估），严禁编造敌方玩家、严禁从【本局所有舰船】猜测哪些是敌方。");
+        }
+        else
+        {
+            sb.AppendLine($"【敌方统计结论】本局敌方玩家共 {enemyCount} 名，其中疑似真人 {enemyRealCount} 名（战绩搜索命中）、其余为 AI/未命中。威胁评估只能针对上述已列出的敌方条目，严禁新增或编造清单外的敌方玩家。");
+        }
         return sb.ToString();
     }
 

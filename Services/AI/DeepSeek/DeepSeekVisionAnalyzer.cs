@@ -39,16 +39,20 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
     private string _token;
     private readonly string _cookie;
     private readonly bool _thinkingEnabled;
+    private readonly string _modelType; // 2026-09 合并升级：默认 "default"（统一模型），旧识图模式为 "vision"
 
     private static readonly HttpClient Http = CreateClient();
 
     public string ProviderName => "DeepSeek 视觉";
 
-    public DeepSeekVisionAnalyzer(string token, string cookie, bool thinkingEnabled = true)
+    public DeepSeekVisionAnalyzer(string token, string cookie, bool thinkingEnabled = true,
+        string modelType = "default")
     {
         _token = token ?? string.Empty;
         _cookie = cookie ?? string.Empty;
         _thinkingEnabled = thinkingEnabled;
+        // 防御：只接受已知取值，非法值回退到 default（统一模型）
+        _modelType = modelType is "default" or "vision" ? modelType : "default";
     }
 
     private static HttpClient CreateClient()
@@ -134,8 +138,19 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
                 images.Add((Convert.FromBase64String(request.LineupImageBase64), "lineup.png"));
             images.Add((Convert.FromBase64String(request.ImageBase64), "minimap.png"));
 
+            // ===== 同局上下文记忆（不落盘）=====
+            // DeepSeek 网页端本身会记忆会话：只要复用同一个 chat_session_id 并在
+            // parent_message_id 上续接，AI 就能看到本局此前的分析/追问。
+            // 分析（非追问）也复用已有会话：同局内多次"分析"都接在同一段网页对话里，
+            // 不会每次开新对话而失忆。没有可用会话（首次分析/重启后）则自动新建。
+            var reuseCtx = request.Conversation;
+            var reuseSessionId = string.IsNullOrWhiteSpace(reuseCtx?.DeepSeekSessionId)
+                ? null : reuseCtx.DeepSeekSessionId;
+            var reuseParentId = string.IsNullOrWhiteSpace(reuseCtx?.DeepSeekLastMessageId)
+                ? null : reuseCtx.DeepSeekLastMessageId;
+
             var chat = await ChatWithImagesAsync(prompt, images, thinkingEnabled: _thinkingEnabled,
-                request.OnStreamChunk, ct);
+                request.OnStreamChunk, ct, sessionId: reuseSessionId, parentMessageId: reuseParentId);
             result.Success = true;
             result.Content = chat.Content;
             result.DeepSeekSessionId = chat.SessionId;
@@ -223,8 +238,8 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         var body = new
         {
             chat_session_id = realSessionId,
-            parent_message_id = parentMessageId,   // 首次为 null，追问为上一轮助手消息 id
-            model_type = "vision",
+            parent_message_id = ParseParentMessageId(parentMessageId),   // 追问续接：必须传数字(u32)，实测传字符串 "2" 会被 422 拒绝
+            model_type = _modelType,               // 2026-09 合并后统一模型为 "default"，不再硬编码 "vision"
             prompt,
             ref_file_ids = fileIds,
             thinking_enabled = thinkingEnabled,
@@ -303,7 +318,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         var req = new HttpRequestMessage(HttpMethod.Post, $"{BaseHost}/api/v0/file/upload_file");
         ApplyCommonHeaders(req);
         req.Headers.TryAddWithoutValidation("x-ds-pow-response", powHeader);
-        req.Headers.TryAddWithoutValidation("x-model-type", "vision");
+        req.Headers.TryAddWithoutValidation("x-model-type", _modelType);
         req.Headers.TryAddWithoutValidation("x-file-size", pngBytes.Length.ToString());
         req.Headers.TryAddWithoutValidation("x-thinking-enabled", thinkingEnabled ? "1" : "0");
         req.Content = multipart;
@@ -549,7 +564,8 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
                 if (line.StartsWith("event:"))
                 {
                     var ev = line["event:".Length..].Trim();
-                    if (ev == "close") finished = true;
+                    // 2026-09 新协议：finish 事件与 close 事件都是流结束信号（旧协议只有 close）
+                    if (ev is "close" or "finish") finished = true;
                     continue;
                 }
 
@@ -614,6 +630,14 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         return (text, messageId ?? tempId);
     }
 
+    /// <summary>DeepSeek 的 parent_message_id 期望 u32 数字类型：SSE 返回的 message_id 以字符串形式存储，
+    /// 直接序列化会被 422 拒绝（invalid type: string, expected u32），这里转成数字；非数字 id 原样返回兜底。</summary>
+    private static object? ParseParentMessageId(string? parentMessageId)
+    {
+        if (string.IsNullOrWhiteSpace(parentMessageId)) return null;
+        if (long.TryParse(parentMessageId, out var id)) return id;
+        return parentMessageId;
+    }
     /// <summary>从一条 SSE data 里读取助手消息 id（DeepSeek 视觉：v.response.message_id / temporary_id）。</summary>
     private static void ExtractMessageId(string payload, ref string? messageId, ref string? tempId)
     {
@@ -657,9 +681,13 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             return st == "FINISHED";
         }
 
-        var p = root["p"]?.ToString();
+        var p0 = root["p"]?.ToString();
         var o = root["o"]?.ToString();
         var val = root["v"];
+
+        // 2026-09 新协议路径格式兼容：可能带前导 "/"（/response/fragments）或点号分隔（response.fragments），
+        // 统一归一化为 "response/fragments" 形式再比较，旧格式（response/fragments）不受影响。
+        var p = p0 == null ? null : NormalizeDeltaPath(p0);
 
         if (p == null)
         {
@@ -677,9 +705,11 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
             {
                 // 防御：item 必须是 JSON 对象才访问字段
                 if (item is not JsonObject itemObj) continue;
-                if (itemObj["p"]?.ToString() == "response/status" && itemObj["v"]?.ToString() == "FINISHED")
+                var ip = itemObj["p"]?.ToString();
+                if (ip != null) ip = NormalizeDeltaPath(ip);
+                if (ip == "response/status" && itemObj["v"]?.ToString() == "FINISHED")
                     done = true;
-                if (itemObj["p"]?.ToString() == "quasi_status" && itemObj["v"]?.ToString() == "FINISHED")
+                if (ip == "quasi_status" && itemObj["v"]?.ToString() == "FINISHED")
                     done = true;
             }
             return done;
@@ -707,6 +737,10 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
         return false;
     }
+
+    /// <summary>归一化 SSE delta 路径：去前导斜杠、点号转斜杠，统一成 "response/fragments" 风格。</summary>
+    private static string NormalizeDeltaPath(string p)
+        => p.TrimStart('/').Replace('.', '/');
 
     private static void AddFragment(List<Fragment> fragments, JsonNode? f)
     {
@@ -751,9 +785,9 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         req.Headers.TryAddWithoutValidation("sec-fetch-site", "same-origin");
         req.Headers.Add("Origin", "https://chat.deepseek.com");
         req.Headers.Referrer = new Uri("https://chat.deepseek.com/");
-        req.Headers.TryAddWithoutValidation("x-client-version", "2.5.0");
+        req.Headers.TryAddWithoutValidation("x-client-version", "2.5.0"); // 新版网页 appVersion 仍为 2.5.0
         req.Headers.TryAddWithoutValidation("x-client-platform", "web");
-        req.Headers.TryAddWithoutValidation("x-client-bundle-id", "com.deepseek.chat");
+        req.Headers.TryAddWithoutValidation("x-client-bundle-id", "com.deepseek.chat-web-prod"); // 2026-09 新版 Production bundle id
         req.Headers.TryAddWithoutValidation("x-client-locale", "zh_CN");
         req.Headers.TryAddWithoutValidation("x-client-timezone-offset", TzOffset.ToString());
     }
@@ -900,7 +934,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         - 小地图截图：图例 绿色=我方舰船，红色=敌方舰船，白色箭头=用户自己的舰船。
         - 用户战舰名 + 本局所有舰船名（扁平列表，可能含重复：双方同型舰会出现两次）。
         - 战舰参数知识库：仅供你内部参考，输出中不要复述、罗列参数。
-        - 玩家威胁评估清单：由联网查询 shinoaki 接口得到，提供每个玩家的搜索结果（命中/未命中）、玩家名是否含冒号、以及命中玩家的 PR/胜率/场均伤害/场均击杀/KD 等战绩。清单不做人机判定，需要你综合判断。清单中标注 [AI bot] 的玩家是 PVE 模式的电脑玩家，直接视为人机，无需再判断。清单可能因模式原因缺少敌方条目（如敌方全是 AI 时），此时敌方阵容以【本局所有舰船】与知识库为准。
+        - 玩家威胁评估清单：由联网查询 shinoaki 接口得到，提供每个玩家的搜索结果（命中/未命中）、玩家名是否含冒号、以及命中玩家的 PR/胜率/场均伤害/场均击杀/KD 等战绩。清单不做人机判定，需要你综合判断。清单中标注 [AI bot] 的玩家是 PVE 模式的电脑玩家，直接视为人机，无需再判断。清单可能因模式原因缺少敌方条目（如行动模式敌方全是 AI 时）→ 这意味着【本局没有敌方真人玩家】，严禁编造敌方玩家、严禁从【本局所有舰船】猜测敌方，敌方威胁只按 AI 舰船（知识库参数）提示。
 
         【小地图坐标系统——重要，已按游戏实测修正】
         小地图是海面俯视图，被分割成 10×10 共 100 个格子，方向为上北下南（图上北=海图上方）：
@@ -937,6 +971,7 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
 
         【容错】
         - 小地图上可能没有敌方舰船（开局对面未点亮）：此时威胁与策略基于阵容和参数推断，不要编造敌方位置。
+        - 行动/剧情等 PVE 模式没有敌方真人玩家，只有己方队友和敌方 AI 电脑——清单没有[敌方]条目就写"本局无敌方真人玩家"，不要凭空想象敌方玩家。
         - 小地图上绿色/红色小点无法精确对应到具体哪艘舰船（只能看出分布），结合【本局所有舰船】与【我的战舰】推断大概位置即可，不确定时用"推测/可能"，不要编造"某舰在 5E"这类精确断言。
         - 双方可能出现同型舰：靠阵容图中的阵营归属区分，不要混淆敌我同型舰。
         - 若阵容图里某些信息看不清，按能看清的部分判断，不要瞎编。
@@ -944,7 +979,8 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         【输出】直接给以下四部分，中文，分点，简洁。可引用具体数值（如"隐蔽5.8km""主炮射程18km"）但不要整段抄参数，不要废话套话：
         1.【怎么玩这艘船】针对用户战舰，结合其参数特性给出本局打法要点：接敌距离、走位思路、应避免的对抗等。注意：不要提任何消耗品（知识库无此数据），改用基于舰船参数的描述。
         2.【敌方威胁评估】
-           - 先点明敌方有几艘是人机、几艘是真人（由你根据上述三条规则综合判断，并简要说明判断依据）。
+           - 先点明敌方有几艘真人、几艘人机（由你根据上述三条规则综合判断，并简要说明判断依据）。
+           - 若清单中没有任何[敌方]条目 → 直接写"本局无敌方真人玩家（行动/PVE 模式，敌方全为 AI 电脑）"，不要编造敌方玩家；只基于知识库参数提示敌方 AI 舰船的火力威胁即可。
            - 对真人玩家，结合其战绩（PR/胜率/场均伤害）与所驾舰船判断谁最凶、最可能带节奏，说明理由。
            - 结合舰船性能（主炮口径/射程/隐蔽/鱼雷/机动/防空）说明每个重点目标的威胁点。
         3.【优先攻击目标】明确给出本局建议优先处理的目标（具体舰船+是否真人），一句话理由+克制手段。
@@ -1027,6 +1063,12 @@ public sealed class DeepSeekVisionAnalyzer : IAIBattleAnalyzer
         if (!string.IsNullOrWhiteSpace(req.KnowledgeBaseText))
             sb.AppendLine(req.KnowledgeBaseText);
         sb.AppendLine();
+        if (!string.IsNullOrWhiteSpace(req.LiveBattleDataText))
+        {
+            sb.AppendLine("【模组实时对局数据】以下数据来自官方 ModsAPI 模组采集，只反映对局进行到此刻已发生的事实，请基于此补充实时判断（如局势、自身表现）：");
+            sb.AppendLine(req.LiveBattleDataText.TrimEnd());
+            sb.AppendLine();
+        }
         if (req.LineupFromAutoDetect)
             sb.AppendLine("以上阵容数据和阵营标签由游戏文件精确解析（100%准确），请直接基于此进行分析。威胁评估参考上方玩家战绩清单。");
         else

@@ -27,6 +27,12 @@ public sealed class AppSettings
     /// <summary>DeepSeek 思考模式（开启=显示思考链但更慢，关闭=仅回复文本更快）</summary>
     public bool EnableDeepSeekThinking { get; set; } = true;
 
+    /// <summary>
+    /// DeepSeek 网页版模型类型（2026-09 合并升级后默认 "default"；"vision" 为旧识图模式，仅兼容回退用）。
+    /// 取值：default / vision
+    /// </summary>
+    public string DeepSeekModelType { get; set; } = "default";
+
     /// <summary>启用语音指令控制</summary>
     public bool EnableVoiceControl { get; set; } = false;
 
@@ -51,6 +57,20 @@ public sealed class AppSettings
 
     /// <summary>是否启用阵容自动检测（读取 tempArenaInfo.json，跳过截图+AI识别步骤）</summary>
     public bool AutoDetectLineup { get; set; } = true;
+
+    /// <summary>
+    /// 启用官方 ModsAPI 模组（WowsBAMod）：在设置好游戏目录后自动安装到
+    /// res_mods\&lt;版本&gt;\PnFMods\，采集对局实时数据（血量/缎带/统计）供 AI 分析。
+    /// 模组对游戏完全只读、不提供游戏内优势。
+    /// </summary>
+    public bool EnableWowsMod { get; set; } = true;
+
+    /// <summary>启用「实时战况」悬浮窗（显示模组连接状态 + 血量/伤害/击杀/事件，证明模组工作）</summary>
+    public bool EnableLiveOverlay { get; set; } = true;
+
+    /// <summary>实时战况悬浮窗位置（逻辑像素）</summary>
+    public double LiveOverlayLeft { get; set; } = 1080;
+    public double LiveOverlayTop { get; set; } = 400;
 
     /// <summary>战绩查询 API 后端选择</summary>
     public ApiBackend ApiBackend { get; set; } = ApiBackend.Shinoaki;

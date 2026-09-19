@@ -16,14 +16,14 @@
             <StackPanel>
                 <TextBlock Text="框选目标区域" FontSize="22" FontWeight="Bold" Foreground="White"/>
                 <TextBlock Text="按住鼠标左键拖动框选，松开即完成；右键单击或按 Esc 取消。本窗口不抢占游戏焦点，可继续按游戏内按键。"
-                           FontSize="13" Foreground="#FFBDBDBD" Margin="0,6,0,0" TextWrapping="Wrap" MaxWidth="520"/>
-                <TextBlock x:Name="SizeTip" Text="" FontSize="12" Foreground="#FF4FC3F7" Margin="0,4,0,0"/>
+                           FontSize="13" Foreground="#FFC9D1E0" Margin="0,6,0,0" TextWrapping="Wrap" MaxWidth="520"/>
+                <TextBlock x:Name="SizeTip" Text="" FontSize="12" Foreground="#FF38BDF8" Margin="0,4,0,0"/>
             </StackPanel>
         </Border>
         <Rectangle x:Name="SelectionRect"
-                   Stroke="#FF4FC3F7" StrokeThickness="2"
+                   Stroke="#FF38BDF8" StrokeThickness="2"
                    Fill="#33FFFFFF" Visibility="Collapsed"/>
-        <Border x:Name="SizeBadge" Background="#FF4FC3F7" CornerRadius="3" Padding="6,2" Visibility="Collapsed">
+        <Border x:Name="SizeBadge" Background="#FF38BDF8" CornerRadius="3" Padding="6,2" Visibility="Collapsed">
             <TextBlock x:Name="SizeBadgeText" FontSize="11" Foreground="Black"/>
         </Border>
     </Canvas>

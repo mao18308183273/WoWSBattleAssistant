@@ -12,8 +12,8 @@
         ShowActivated="False"
         WindowStartupLocation="Manual">
 
-    <Border x:Name="RootBorder" Background="#E610121C" BorderBrush="#FF4FC3F7"
-            BorderThickness="1" CornerRadius="8">
+    <Border x:Name="RootBorder" Background="#E60F1117" BorderBrush="#FF38BDF8"
+            BorderThickness="1" CornerRadius="10">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
@@ -30,15 +30,15 @@
                 <StackPanel Grid.Column="0" HorizontalAlignment="Center">
                     <TextBlock x:Name="TxtTeam1Score" Text="—" Foreground="#FF7EB8FF" FontSize="17" FontWeight="Bold"
                                HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="TxtTeam1Name" Text="我方" Foreground="#FF9AA0B4" FontSize="10"
+                    <TextBlock x:Name="TxtTeam1Name" Text="我方" Foreground="#FF9BA4B8" FontSize="10"
                                HorizontalAlignment="Center"/>
                 </StackPanel>
-                <TextBlock Grid.Column="1" Text="VS" Foreground="#FF4FC3F7" FontSize="14" FontWeight="Bold"
+                <TextBlock Grid.Column="1" Text="VS" Foreground="#FF38BDF8" FontSize="14" FontWeight="Bold"
                            VerticalAlignment="Center" Margin="10,0"/>
                 <StackPanel Grid.Column="2" HorizontalAlignment="Center">
                     <TextBlock x:Name="TxtTeam2Score" Text="—" Foreground="#FFFF7E7E" FontSize="17" FontWeight="Bold"
                                HorizontalAlignment="Center"/>
-                    <TextBlock x:Name="TxtTeam2Name" Text="敌方" Foreground="#FF9AA0B4" FontSize="10"
+                    <TextBlock x:Name="TxtTeam2Name" Text="敌方" Foreground="#FF9BA4B8" FontSize="10"
                                HorizontalAlignment="Center"/>
                 </StackPanel>
             </Grid>
@@ -54,11 +54,11 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="▲ 单击收起 · 右键隐藏 · 按住可拖拽" Foreground="#FF666C80" FontSize="9"
+                    <TextBlock Text="▲ 单击收起 · 右键隐藏 · 按住可拖拽" Foreground="#FF5D6575" FontSize="9"
                                VerticalAlignment="Center"/>
                     <Button x:Name="BtnCopyEnemy" Grid.Column="1" Content="📋 复制敌方战力"
                             FontSize="10" FontWeight="Bold" Padding="8,3"
-                            Background="#FF4FC3F7" Foreground="#FF0D1117"
+                            Background="#FF38BDF8" Foreground="#FF0B1220"
                             BorderThickness="0" Cursor="Hand" Click="BtnCopyEnemy_Click"/>
                 </Grid>
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="250">

@@ -96,10 +96,15 @@ public sealed class ShipDatabase
         if (_lowerToName.TryGetValue(n.ToLowerInvariant(), out var origName))
             return _byName[origName];
 
-        // 3. 包含匹配（用户输入可能是别名或带前后缀）
+        // 3. 包含匹配（用户输入可能是别名或带前后缀）。
+        //    仅当输入长度 >= 2 时启用，防止等级单独输入（如 "IV"、"V"）这类
+        //    1 字符/2 字符子串被包含匹配到无关舰船（如 "v" 命中名字含 v 的船）。
         var lower = n.ToLowerInvariant();
-        var hit = _lowerToName.FirstOrDefault(kv => kv.Key.Contains(lower) || lower.Contains(kv.Key));
-        if (hit.Value != null) return _byName[hit.Value];
+        if (lower.Length >= 2)
+        {
+            var hit = _lowerToName.FirstOrDefault(kv => kv.Key.Contains(lower) || lower.Contains(kv.Key));
+            if (hit.Value != null) return _byName[hit.Value];
+        }
 
         return null;
     }

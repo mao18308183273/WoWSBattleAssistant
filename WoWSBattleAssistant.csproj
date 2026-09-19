@@ -25,6 +25,11 @@
     <EmbeddedResource Include="Services\AI\DeepSeek\pow_solver.js" />
     <EmbeddedResource Include="Services\AI\DeepSeek\sha3_wasm_bg.wasm" />
   </ItemGroup>
+
+  <!-- 官方 ModsAPI 模组模板（安装时写入 res_mods\PnFMods\WowsBAMod\Main.py） -->
+  <ItemGroup>
+    <EmbeddedResource Include="GameMods\WowsBAMod\Main.py" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Speech" Version="10.0.11" />
   </ItemGroup>
