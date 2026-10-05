@@ -53,3 +53,13 @@ pack.sed
 # 发布二进制
 *.exe
 *.msi
+
+# 逆向/研究中间产物（含解压的大文件，不入库；结论已写进文档与代码注释）
+_research_*/
+
+# 爬虫产出的完整船型数据库（17MB+，需要时用 Tools/wows_ship_scraper.py 重新生成；
+#   仓库里只保留精简索引 Tools/ship_names_zh.json）
+Tools/wows_ships_data_*.json
+
+# 各类备份
+*.bak*
