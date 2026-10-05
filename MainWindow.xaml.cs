@@ -162,7 +162,10 @@ public partial class MainWindow : Window
         {
             var modDataDir = WowsModInstaller.GetRuntimeModDataDir(_settings.GamePath)
                              ?? WowsModInstaller.GetModDataDir();
-            _modDataMonitor = new ModDataMonitor(modDataDir);
+            // 传入船名解析器，让花名册显示中文舰名（而不是 PZSC109_Sejong 这种内部名）
+            _modDataMonitor = new ModDataMonitor(
+                modDataDir,
+                id => _database.GetShipDisplayName(id));
             var modInstalled = WowsModInstaller.IsInstalled(_settings.GamePath);
             AppLog.Info($"模组数据监控: {(modInstalled ? "模组已安装" : "模组未安装（可在设置中一键安装）")}, 数据目录={modDataDir}");
         }
@@ -172,6 +175,14 @@ public partial class MainWindow : Window
             EnsureLiveOverlay();
 
         if (_isAutoMode) StartAutoDetection();
+
+        // 出生点知识库自动更新：把上次启动以来新打的回放喂进去（后台，失败不影响使用）。
+        // 这是"AI 从哪出现"唯一合法的数据来源——出生点由服务端下发，运行时拿不到，
+        // 但每局都会被完整写进 .wowsreplay，所以打一局记一笔，玩得越多越精确。
+        _ = Task.Run(() =>
+        {
+            SpawnDbUpdater.Update(_settings.GamePath, _settings.PythonPath);
+        });
     }
 
     // ===== 模式切换 =====
@@ -385,6 +396,16 @@ public partial class MainWindow : Window
         var newBattleKey = detection.BattleStartTime;
         if (string.IsNullOrEmpty(newBattleKey)) newBattleKey = Guid.NewGuid().ToString();
         _currentBattleMode = detection.BattleType ?? "";
+
+        // 把剧本号/地图名交给 mod 数据层：行动模式据此查「AI 出生点」知识库
+        if (_modDataMonitor != null)
+        {
+            _modDataMonitor.CurrentScenario = detection.Scenario ?? "";
+            _modDataMonitor.CurrentMapName = detection.MapName ?? "";
+            if (!string.IsNullOrEmpty(detection.Scenario))
+                AppLog.Info($"行动剧本识别: {detection.Scenario}（{detection.MapName}）");
+        }
+
         if (_currentBattleKey != newBattleKey)
         {
             // 新对局 → 清空上一局的对话上下文，开始全新分析会话
@@ -1330,40 +1351,63 @@ public partial class MainWindow : Window
         {
             var region = _settings.MinimapRegion;
             BitmapSource? shot = null;
+            string? captureNote = null;
 
-            // 缩放方案：把游戏窗口置前 → 小地图放大到最大 → 截图 → 缩回。
-            // 缩放越大截图清晰度越高。全程容错：任何一步失败都降级为直接截图。
+            // 新流程（MinimapCaptureService）：
+            //   ① 可选先把小地图放大到最大 → 截完自动缩回（绝不卡在放大态）
+            //   ② 按住 Alt 截取（小地图叠加舰名/血量/航向）
+            //   ③ 区域按游戏窗口锚点换算 → 窗口移动/缩放都不会截偏
+            //   ④ 连拍多帧取最"实"的一帧，空帧（黑屏/截错）自动重试
             var gameWindow = GameInputHelper.FindGameWindow();
-            if (gameWindow != IntPtr.Zero)
+            var opt = new MinimapCaptureService.Options
             {
-                this.Hide();
-                try
+                HoldAlt = _settings.MinimapHoldAlt,
+                ZoomToMax = _settings.MinimapZoomToMax,
+            };
+
+            this.Hide();
+            try
+            {
+                MinimapCaptureService.Result? res = null;
+                await Task.Run(() =>
                 {
-                    await Task.Run(() =>
+                    res = MinimapCaptureService.Capture(
+                        _settings.MinimapRegion,
+                        _settings.MinimapAnchorWindow,
+                        opt);
+                }).WaitAsync(TimeSpan.FromSeconds(20));
+
+                if (res != null)
+                {
+                    shot = res.Image;
+                    var bits = new List<string>();
+                    if (res.UsedAlt) bits.Add("按住Alt");
+                    if (res.UsedZoom) bits.Add("已放大");
+                    if (res.UsedAnchor) bits.Add("窗口锚点校正");
+                    if (bits.Count > 0) captureNote = string.Join(" + ", bits);
+                    if (!string.IsNullOrEmpty(res.Warning))
                     {
-                        GameInputHelper.ZoomMinimapMax(() =>
-                        {
-                            var s = ScreenCaptureService.CaptureRegion(region);
-                            Dispatcher.Invoke(() => shot = s);
-                        });
-                    }).WaitAsync(TimeSpan.FromSeconds(12));
-                }
-                catch (TimeoutException)
-                {
-                    AppLog.Warn("小地图缩放截图超时，降级为直接截图");
-                }
-                catch (Exception ex)
-                {
-                    AppLog.Warn($"小地图缩放截图失败（降级直接截图）: {ex.Message}");
-                }
-                finally
-                {
-                    this.Show();
-                    this.Activate();
+                        captureNote = (captureNote == null ? "" : captureNote + "；") + res.Warning;
+                        AppLog.Warn("小地图截取提示: " + res.Warning);
+                    }
+                    AppLog.Info($"小地图截取诊断: 清晰度={res.Sharpness:0.0} 区域={res.Region} {captureNote}");
                 }
             }
+            catch (TimeoutException)
+            {
+                AppLog.Warn("小地图截取超时，降级为直接截图");
+            }
+            catch (Exception ex)
+            {
+                AppLog.Warn($"小地图截取失败（降级直接截图）: {ex.Message}");
+            }
+            finally
+            {
+                this.Show();
+                this.Activate();
+            }
 
-            // 降级：直接截当前画面（游戏窗口没找到/缩放失败）
+            // 降级：直接截当前画面
             shot ??= ScreenCaptureService.CaptureRegion(region);
             if (shot == null)
             {
@@ -1375,14 +1419,16 @@ public partial class MainWindow : Window
             // 缓存 Base64，追问时可用
             _latestMinimapBase64 = ScreenCaptureService.EncodeToBase64(shot);
             ImgMinimapPreview.Source = shot;
-            TxtMinimapPlaceholder.Visibility = shot == null ? Visibility.Visible : Visibility.Collapsed;
-            TxtMinimapStatus.Text = $"✅ 已截取小地图 ({(int)region.Width}×{(int)region.Height}) — 可随时重新截取";
+            TxtMinimapPlaceholder.Visibility = Visibility.Collapsed;
+            var sizeNote = $"{shot.PixelWidth}×{shot.PixelHeight}";
+            var note = string.IsNullOrEmpty(captureNote) ? "" : $" [{captureNote}]";
+            TxtMinimapStatus.Text = $"✅ 已截取小地图 ({sizeNote}){note} — 可随时重新截取";
             TxtMinimapHint.Text = "✅ 区域已设，点击按钮即可重新截取（战局变化时可反复截取）";
             _minimapReady = true;
             // 状态栏始终可见（精简模式也看得到），给出明确反馈
-            TxtStatus.Text = $"✅ 已截取小地图 ({(int)region.Width}×{(int)region.Height}) {DateTime.Now:HH:mm:ss} — 可再喊「分析」";
+            TxtStatus.Text = $"✅ 已截取小地图 ({sizeNote}){note} {DateTime.Now:HH:mm:ss} — 可再喊「分析」";
             TxtStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x7E, 0xFF, 0x9E));
-            AppLog.Info($"小地图已截取 {region.Width:0}x{region.Height:0} ({DateTime.Now:HH:mm:ss})");
+            AppLog.Info($"小地图已截取 {shot.PixelWidth}x{shot.PixelHeight} {captureNote} ({DateTime.Now:HH:mm:ss})");
             UpdateAnalyzeButton();
         }
         catch (Exception ex)

@@ -48,6 +48,10 @@ public partial class SettingsWindow : Window
             VoiceConfidenceThreshold = s.VoiceConfidenceThreshold,
             ShipDataPath = s.ShipDataPath,
             MinimapRegion = s.MinimapRegion,
+            MinimapAnchorWindow = s.MinimapAnchorWindow,
+            MinimapHoldAlt = s.MinimapHoldAlt,
+            MinimapZoomToMax = s.MinimapZoomToMax,
+            PythonPath = s.PythonPath,
             WindowLeft = s.WindowLeft,
             WindowTop = s.WindowTop,
             WindowWidth = s.WindowWidth,
@@ -132,12 +136,17 @@ public partial class SettingsWindow : Window
         CbServer.SelectedItem = string.IsNullOrWhiteSpace(_draft.Server) ? "cn" : _draft.Server;
 
         UpdateRegionText();
+        ChkMinimapHoldAlt.IsChecked = _draft.MinimapHoldAlt;
+        ChkMinimapZoom.IsChecked = _draft.MinimapZoomToMax;
         TxtSystemPrompt.Text = _draft.SystemPrompt;
 
         // 官方 ModsAPI 模组
         ChkEnableMod.IsChecked = _draft.EnableWowsMod;
         ChkLiveOverlay.IsChecked = _draft.EnableLiveOverlay;
         RefreshModStatus();
+
+        // AI 出生点知识库
+        RefreshSpawnDbStatus();
     }
 
     /// <summary>刷新模组安装状态显示（根据当前游戏目录实时检测）。</summary>
@@ -246,9 +255,15 @@ public partial class SettingsWindow : Window
     private void UpdateRegionText()
     {
         var r = _draft.MinimapRegion;
-        TxtRegion.Text = r.IsEmpty
-            ? "未设置（请点击下方按钮框选）"
-            : $"区域: X={r.X:0}, Y={r.Y:0}, 宽={r.Width:0}, 高={r.Height:0}";
+        if (r.IsEmpty)
+        {
+            TxtRegion.Text = "未设置（请点击下方按钮框选）";
+            return;
+        }
+        var a = _draft.MinimapAnchorWindow;
+        TxtRegion.Text = a.IsEmpty
+            ? $"区域: X={r.X:0}, Y={r.Y:0}, 宽={r.Width:0}, 高={r.Height:0}（无窗口锚点，窗口移动后会截偏）"
+            : $"区域: X={r.X:0}, Y={r.Y:0}, 宽={r.Width:0}, 高={r.Height:0}　锚点窗口 {a.Width:0}×{a.Height:0}@({a.X:0},{a.Y:0})";
     }
 
     private void BtnBrowse_Click(object sender, RoutedEventArgs e)
@@ -478,6 +493,9 @@ public partial class SettingsWindow : Window
         if (sel.ShowDialog() == true)
         {
             _draft.MinimapRegion = sel.SelectedRegion;
+            // 记下框选那一刻的游戏窗口位置作为锚点：之后窗口移动/缩放都能自动换算，不会截偏
+            var hwnd = GameInputHelper.FindGameWindow();
+            _draft.MinimapAnchorWindow = GameInputHelper.GetWindowScreenRect(hwnd);
             UpdateRegionText();
         }
     }
@@ -491,6 +509,82 @@ public partial class SettingsWindow : Window
     private void OnAiProviderChanged(object sender, RoutedEventArgs e)
     {
         UpdateAiConfigPanelVisibility();
+    }
+
+    private void OnMinimapOptChanged(object sender, RoutedEventArgs e)
+    {
+        _draft.MinimapHoldAlt = ChkMinimapHoldAlt.IsChecked == true;
+        _draft.MinimapZoomToMax = ChkMinimapZoom.IsChecked == true;
+    }
+
+    // ===== 行动模式 · AI 出生点知识库 =====
+
+    private void RefreshSpawnDbStatus()
+    {
+        TxtSpawnDb.Text = SpawnDbUpdater.StatusLine();
+    }
+
+    private void BtnUpdateSpawnDb_Click(object sender, RoutedEventArgs e)
+    {
+        BtnUpdateSpawnDb.IsEnabled = false;
+        TxtSpawnDb.Text = "正在扫描回放目录…";
+        _ = Task.Run(() =>
+        {
+            var r = SpawnDbUpdater.Update(_draft.GamePath, _draft.PythonPath);
+            Dispatcher.Invoke(() =>
+            {
+                BtnUpdateSpawnDb.IsEnabled = true;
+                RefreshSpawnDbStatus();
+                MessageBox.Show(r.Message, r.Ok ? "出生点知识库" : "出生点知识库 · 失败",
+                                MessageBoxButton.OK, r.Ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            });
+        });
+    }
+
+    private void BtnRebuildSpawnDb_Click(object sender, RoutedEventArgs e)
+    {
+        if (MessageBox.Show("会用 replay 目录里的全部回放重新计算出生点知识库（忽略已收录清单）。\n" +
+                            "回放较多时可能需要十几秒。确定继续？", "全量重算",
+                            MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+
+        BtnRebuildSpawnDb.IsEnabled = false;
+        TxtSpawnDb.Text = "正在全量重算…";
+        _ = Task.Run(() =>
+        {
+            var r = SpawnDbUpdater.Update(_draft.GamePath, _draft.PythonPath, rebuild: true);
+            Dispatcher.Invoke(() =>
+            {
+                BtnRebuildSpawnDb.IsEnabled = true;
+                RefreshSpawnDbStatus();
+                MessageBox.Show(r.Message, r.Ok ? "出生点知识库" : "出生点知识库 · 失败",
+                                MessageBoxButton.OK, r.Ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            });
+        });
+    }
+
+    private void BtnPickPython_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog
+        {
+            Title = "选择 Python 3 解释器（python.exe）",
+            Filter = "python.exe|python.exe|可执行文件|*.exe|所有文件|*.*",
+            CheckFileExists = true,
+        };
+        if (!string.IsNullOrWhiteSpace(_draft.PythonPath) && File.Exists(_draft.PythonPath))
+            dlg.FileName = _draft.PythonPath;
+        if (dlg.ShowDialog() != true) return;
+
+        var exe = dlg.FileName;
+        var probe = SpawnDbUpdater.FindPython(exe);
+        if (probe == null)
+        {
+            MessageBox.Show($"这个不是可用的 Python 3：\n{exe}", "指定 Python",
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        _draft.PythonPath = exe;
+        AppLog.Info($"已指定 Python：{exe}");
+        RefreshSpawnDbStatus();
     }
 
     private void UpdateAiConfigPanelVisibility()
@@ -562,6 +656,9 @@ public partial class SettingsWindow : Window
         dst.EnablePowerOverlay = src.EnablePowerOverlay;
         dst.ShipDataPath = src.ShipDataPath;
         dst.MinimapRegion = src.MinimapRegion;
+        dst.MinimapAnchorWindow = src.MinimapAnchorWindow;
+        dst.MinimapHoldAlt = src.MinimapHoldAlt;
+        dst.MinimapZoomToMax = src.MinimapZoomToMax;
         dst.WindowLeft = src.WindowLeft;
         dst.WindowTop = src.WindowTop;
         dst.WindowWidth = src.WindowWidth;
@@ -570,6 +667,7 @@ public partial class SettingsWindow : Window
         dst.SystemPrompt = src.SystemPrompt;
         dst.Server = src.Server;
         dst.GamePath = src.GamePath;
+        dst.PythonPath = src.PythonPath;
         dst.ApiBackend = src.ApiBackend;
         dst.WgApplicationId = src.WgApplicationId;
         dst.EnableWowsMod = src.EnableWowsMod;

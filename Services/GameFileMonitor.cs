@@ -70,6 +70,10 @@ public sealed class GameFileMonitor
             var json = ReadTempArenaInfoFile(filePath);
             result.BattleType = json["matchGroup"]?.ToString() ?? "";
             result.BattleStartTime = json["dateTime"]?.ToString() ?? "";
+            // 行动/剧情（PVE）才有 scenario；用它去查出生点知识库（Tools/spawn_db.json 的键）
+            result.Scenario = json["scenario"]?.ToString() ?? "";
+            result.MapName = json["mapDisplayName"]?.ToString() ?? "";
+            result.PlayersPerTeam = json["playersPerTeam"]?.GetValue<int>() ?? 0;
 
             var vehicles = json["vehicles"] as JsonArray;
             if (vehicles == null) return result;
@@ -211,6 +215,16 @@ public sealed class BattleDetectionResult
     public string? Error { get; set; }
     public string BattleType { get; set; } = "";
     public string BattleStartTime { get; set; } = "";
+
+    /// <summary>剧本代号（行动/剧情模式才有，如 PCVO004_OP_01_04_s02_Naval_Defense_HIGH_LVL）。随机战为空。</summary>
+    public string Scenario { get; set; } = "";
+
+    /// <summary>地图显示名（如 s02_Naval_Defense）。</summary>
+    public string MapName { get; set; } = "";
+
+    /// <summary>每队人数（行动模式常为 7）。</summary>
+    public int PlayersPerTeam { get; set; }
+
     public List<DetectedPlayer> Players { get; set; } = new();
 }
 

@@ -218,6 +218,39 @@
                         <TextBlock x:Name="TxtRegion" Text="未设置" FontSize="12" Foreground="#FF9BA4B8" Margin="0,0,0,8"/>
                         <Button x:Name="BtnSelectRegion" Content="框选小地图位置" Padding="12,4" HorizontalAlignment="Left" Click="BtnSelectRegion_Click"/>
                         <TextBlock Text="提示：框选一次后自动保存，回到主界面即可一键截取，无需重复框选。" FontSize="11" Foreground="#FF9BA4B8" Margin="0,6,0,0" TextWrapping="Wrap"/>
+
+                        <Separator Margin="0,10,0,8" Background="#FF2A3242"/>
+                        <TextBlock Text="截取方式" FontWeight="Bold" FontSize="13" Margin="0,0,0,6"/>
+                        <CheckBox x:Name="ChkMinimapHoldAlt" Content="按住 Alt 截取（小地图叠加舰名/血量/航向，AI 更好读）"
+                                  FontSize="12" Margin="0,2,0,4" Checked="OnMinimapOptChanged" Unchecked="OnMinimapOptChanged"/>
+                        <CheckBox x:Name="ChkMinimapZoom" Content="先放大到最大再截（截完自动缩回）"
+                                  FontSize="12" Margin="0,0,0,4" Checked="OnMinimapOptChanged" Unchecked="OnMinimapOptChanged"/>
+                        <TextBlock Text="说明：放大态截图更大更清晰，但需要先在放大态下重新框选一次区域；默认关闭 = 直接截游戏渲染出的小地图，最稳、不会截偏。"
+                                   FontSize="11" Foreground="#FF9BA4B8" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 行动模式 · AI 出生点知识库 -->
+                <Border Background="#FF1B202E" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                    <StackPanel>
+                        <TextBlock Text="行动模式 · AI 出生点知识库" FontWeight="Bold" FontSize="14" Margin="0,0,0,6"/>
+                        <TextBlock x:Name="TxtSpawnDb" Text="未加载" FontSize="11" Foreground="#FF9BA4B8"
+                                   Margin="0,0,0,6" TextWrapping="Wrap"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="BtnUpdateSpawnDb" Grid.Column="0" Content="立即扫描回放" Padding="10,3"
+                                    Click="BtnUpdateSpawnDb_Click"/>
+                            <Button x:Name="BtnRebuildSpawnDb" Grid.Column="1" Content="全量重算" Padding="10,3" Margin="8,0,0,0"
+                                    Click="BtnRebuildSpawnDb_Click"/>
+                            <Button x:Name="BtnPickPython" Grid.Column="2" Content="指定 python.exe" Padding="10,3" Margin="8,0,0,0"
+                                    Click="BtnPickPython_Click"/>
+                        </Grid>
+                        <TextBlock Text="出生点由服务端下发、运行时拿不到，但每局都会完整写进回放。打一局记一笔，玩得越多越精确。启动时会自动扫描新回放；Python 只用于跑纯标准库的扫描脚本。"
+                                   FontSize="11" Foreground="#FF9BA4B8" Margin="0,6,0,0" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
 

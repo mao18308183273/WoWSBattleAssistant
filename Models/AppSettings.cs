@@ -55,6 +55,13 @@ public sealed class AppSettings
     /// <summary>游戏安装目录（用于自动读取 tempArenaInfo.json）。留空则自动从注册表检测。</summary>
     public string GamePath { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Python 3 解释器路径（用于回放扫描 / 出生点知识库自动更新）。
+    /// 留空则自动探测 PATH 上的 python、py、常见安装目录。
+    /// 扫描脚本是纯标准库实现，任何 Python 3.7+ 都能跑，不需要装第三方包。
+    /// </summary>
+    public string PythonPath { get; set; } = string.Empty;
+
     /// <summary>是否启用阵容自动检测（读取 tempArenaInfo.json，跳过截图+AI识别步骤）</summary>
     public bool AutoDetectLineup { get; set; } = true;
 
@@ -80,6 +87,18 @@ public sealed class AppSettings
 
     /// <summary>小地图在屏幕上的区域（设备像素坐标）</summary>
     public Rect MinimapRegion { get; set; } = Rect.Empty;
+
+    /// <summary>
+    /// 框选小地图区域时游戏窗口的屏幕矩形（锚点）。有了它，游戏窗口移动/改变大小后
+    /// 截图区域会自动跟着换算，不会截偏。为空则用绝对坐标（旧行为）。
+    /// </summary>
+    public Rect MinimapAnchorWindow { get; set; } = Rect.Empty;
+
+    /// <summary>截取小地图时按住 Alt（游戏内 Alt = 小地图叠加舰名/血量/航向，AI 更好读）。</summary>
+    public bool MinimapHoldAlt { get; set; } = true;
+
+    /// <summary>先把小地图放大到最大再截（截完自动缩回）。关闭=直接截渲染结果（更稳、不会截偏）。</summary>
+    public bool MinimapZoomToMax { get; set; } = false;
 
     /// <summary>悬浮窗位置 X（逻辑像素）</summary>
     public double WindowLeft { get; set; } = 100;

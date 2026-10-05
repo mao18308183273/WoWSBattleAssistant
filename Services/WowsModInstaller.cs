@@ -238,7 +238,13 @@ def _js(v):
     if v is False:
         return 'false'
     t = type(v)
-    if t in (int, long, float):
+    if t is int:
+        return repr(v)
+    if t is long:
+        return '%d' % v
+    if t is float:
+        if v != v or v == float('inf') or v == float('-inf'):
+            return 'null'
         return repr(v)
     if t is unicode:
         v = v.encode('utf-8')

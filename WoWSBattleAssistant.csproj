@@ -20,6 +20,14 @@
     <None Remove="WinInstaller\**" />
   </ItemGroup>
 
+  <!-- 排除调研工作目录（含临时验证用子项目，不参与主程序编译/发布） -->
+  <ItemGroup>
+    <Compile Remove="_research_20260927\**" />
+    <Page Remove="_research_20260927\**" />
+    <EmbeddedResource Remove="_research_20260927\**" />
+    <None Remove="_research_20260927\**" />
+  </ItemGroup>
+
   <!-- DeepSeek PoW 求解器资源(嵌入到程序集,运行时释放到临时目录) -->
   <ItemGroup>
     <EmbeddedResource Include="Services\AI\DeepSeek\pow_solver.js" />
@@ -29,6 +37,12 @@
   <!-- 官方 ModsAPI 模组模板（安装时写入 res_mods\PnFMods\WowsBAMod\Main.py） -->
   <ItemGroup>
     <EmbeddedResource Include="GameMods\WowsBAMod\Main.py" />
+  </ItemGroup>
+
+  <!-- 行动模式「AI 出生点」知识库 + 生成脚本：随程序输出，运行时从 Tools\ 读取 -->
+  <ItemGroup>
+    <None Include="Tools\spawn_db.json" CopyToOutputDirectory="PreserveNewest" Link="Tools\spawn_db.json" />
+    <None Include="Tools\replay_spawn_scan.py" CopyToOutputDirectory="PreserveNewest" Link="Tools\replay_spawn_scan.py" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Speech" Version="10.0.11" />

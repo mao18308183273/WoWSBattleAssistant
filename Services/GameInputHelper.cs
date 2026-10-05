@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Windows;
 
 namespace WoWSBattleAssistant.Services;
 
@@ -31,8 +32,26 @@ public static class GameInputHelper
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hWnd);
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
     private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int Left, Top, Right, Bottom; }
+
+    /// <summary>屏幕物理像素下的窗口矩形（含边框）。失败返回 Rect.Empty。</summary>
+    public static Rect GetWindowScreenRect(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return Rect.Empty;
+        try
+        {
+            if (!GetWindowRect(hwnd, out var r)) return Rect.Empty;
+            if (r.Right <= r.Left || r.Bottom <= r.Top) return Rect.Empty;
+            return new Rect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
+        }
+        catch { return Rect.Empty; }
+    }
 
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const uint KEYEVENTF_SCANCODE = 0x0008;
@@ -45,6 +64,9 @@ public static class GameInputHelper
     private const byte SCAN_NUMPAD_PLUS = 0x4E;
     private const byte SCAN_NUMPAD_MINUS = 0x4A;
     private const byte SCAN_LSHIFT = 0x2A;
+
+    /// <summary>左 Alt 的硬件扫描码。游戏内按住 Alt = 小地图显示舰名/血量等扩展信息。</summary>
+    public const byte SCAN_LALT = 0x38;
 
     /// <summary>
     /// 查找游戏主窗口句柄。
@@ -150,6 +172,36 @@ public static class GameInputHelper
         if (withShift) list.Add(KeyInput(SCAN_LSHIFT, down: false));
         if (list.Count > 0)
             SendInput((uint)list.Count, list.ToArray(), Marshal.SizeOf<INPUT>());
+    }
+
+    /// <summary>只按下某个扫描码（不抬起）。用于「按住 Alt 再截图」。</summary>
+    public static void KeyDownScan(byte scan)
+    {
+        var arr = new[] { KeyInput(scan, down: true) };
+        SendInput(1, arr, Marshal.SizeOf<INPUT>());
+    }
+
+    /// <summary>抬起某个扫描码。必须与 KeyDownScan 成对调用。</summary>
+    public static void KeyUpScan(byte scan)
+    {
+        var arr = new[] { KeyInput(scan, down: false) };
+        SendInput(1, arr, Marshal.SizeOf<INPUT>());
+    }
+
+    /// <summary>按住 Alt（游戏内显示小地图扩展信息：舰名/血量/航向）。</summary>
+    public static void HoldAlt() => KeyDownScan(SCAN_LALT);
+
+    /// <summary>松开 Alt。</summary>
+    public static void ReleaseAlt() => KeyUpScan(SCAN_LALT);
+
+    /// <summary>
+    /// 紧急兜底：把当前所有可能被"按住"的键都抬起来，避免异常路径下 Alt/+/- 卡住。
+    /// </summary>
+    public static void ReleaseAll()
+    {
+        foreach (var s in new[] { SCAN_LALT, SCAN_LSHIFT, SCAN_EQUALS, SCAN_MINUS,
+                                  SCAN_NUMPAD_PLUS, SCAN_NUMPAD_MINUS })
+            KeyUpScan(s);
     }
 
     /// <summary>
