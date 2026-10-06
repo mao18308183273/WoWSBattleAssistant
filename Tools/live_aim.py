@@ -91,10 +91,14 @@ class LiveAim:
         #   body[4:8] = vehicle_entity_id（被点亮的那个实体）
         # 实测"我自己"要靠 vehicle_entity_id 才能匹配上（wows-replay-parser
         # 也是用这个字段取到 766 条自舰样本的）。
-        self.vis = {}            # eid -> 首次出现 (t,x,z)
-        self.vis_last = {}       # eid -> 最近一次 (t,x,z)
-        self.vis_time = {}       # eid -> 首次出现时刻
-        self.vis_by_vehicle = {}
+        # ★ 0x2c 不含每辆车的 id，只给"按顺序的可见车辆位域"，所以这里存
+        #   的是**顺序索引**而不是 entity id。真正的位置/速度走 0x0a。
+        self.vis_idx = []         # 本次包里"可见"的车在列表中的下标
+        self.vis_bits = {}        # 下标 -> 原始 int32
+        self.vis_raw = {}         # 下标 -> (raw_x, raw_y, heading)
+        self.vis_seq = 0          # 列表长度（车队规模）
+        self.vis_seen = 0         # 其中可见的数量
+        self.last_observer = 0
         self.pos = defaultdict(list)   # eid -> [(t, x, z)] 坐标单位，来自 0x0a
         self.ident = {}          # eid -> 名字
         self.clock = 0.0
@@ -114,25 +118,49 @@ class LiveAim:
     def _on_packet(self, ptype, pt, body):
         if pt > self.clock:
             self.clock = pt
-        if ptype == PACKET_VISION and len(body) >= 24:
-            # ★ 字段偏移经过实测校准（之前错位 12 字节，导致绝大多数包被丢弃）：
-            #   +0  entity_id        (i4)
-            #   +4  vehicle_entity_id(i4)  本局实测恒为 0，不可依赖
-            #   +8  world_x          (f4)
-            #   +16 world_z          (f4)
-            #   +20 heading          (f4)  弧度
-            eid = struct.unpack_from('<i', body, 0)[0]
-            vid = struct.unpack_from('<i', body, 4)[0]
-            x = struct.unpack_from('<f', body, 8)[0]
-            z = struct.unpack_from('<f', body, 16)[0]
-            hdg = struct.unpack_from('<f', body, 20)[0]
-            if eid and (x or z):
-                rec = (pt, x, z)
-                self.vis_last[eid] = rec
-                self.vis_time.setdefault(eid, pt)
-                if vid:
-                    self.vis_last[vid] = rec
-                    self.vis_time.setdefault(vid, pt)
+        if ptype == PACKET_VISION and len(body) >= 8:
+            # ★★ 结构已实测破解（来源：Avatar.def 的 updateMinimapVisionInfo
+            #    + wows_replay_parser 的 models.py 文档，**不需要 IDA 逆向**）：
+            #   [0:4]  observer entity id（观察者，就是我们自己）
+            #   [4:]   entityIdlist —— **每辆车一个 int32 位域**，长度可变
+            #     bits 0-10  raw_x  (11 bit，小地图网格坐标)
+            #     bits 11-21 raw_y  (11 bit)
+            #     bits 22-29 heading(8 bit)
+            #     bit 30     unknown
+            #     bit 31     is_disappearing
+            #   raw_x==0 且 raw_y==0 是**明确的"不可见"哨兵值**（不是启发式）。
+            #
+            # 我先前把 [8:12]/[16:20] 当 world_x/world_z 的 float 读，是错的 ——
+            # 那里是位域，读出来的"400.0"只是位模式碰巧像浮点数。这也是
+            # 之前"可见实体只剩 1~5 个"的根因。
+            #
+            # ★ 关键：包里**没有每辆车的 entity id**，位域按固定顺序对应车辆。
+            #   所以本模块只用 0x2c 判断"可见性"，位置一律取自 0x0a 的真实坐标。
+            obs = struct.unpack_from('<i', body, 0)[0]
+            cnt = (len(body) - 4) >> 2
+            seen = 0
+            for k in range(cnt):
+                v = struct.unpack_from('<I', body, 4 + 4 * k)[0]
+                raw_x = v & 0x7FF
+                raw_y = (v >> 11) & 0x7FF
+                if raw_x == 0 and raw_y == 0:
+                    continue          # 哨兵：这辆车当前不可见
+                seen += 1
+            self.vis_seq = cnt
+            self.vis_seen = seen
+            # 可见车辆的**顺序索引**集合，供按序对应 entity id 用
+            idx = [k for k in range(cnt)
+                   if (lambda v: (v & 0x7FF) or ((v >> 11) & 0x7FF))(
+                       struct.unpack_from('<I', body, 4 + 4 * k)[0])]
+            self.vis_idx = idx
+            self.vis_bits = {k: struct.unpack_from('<I', body, 4 + 4 * k)[0]
+                             for k in idx}
+            self.vis_raw = {k: (self.vis_bits[k] & 0x7FF,
+                                (self.vis_bits[k] >> 11) & 0x7FF,
+                                (self.vis_bits[k] >> 22) & 0xFF)
+                            for k in idx}
+            if obs:
+                self.last_observer = obs
         elif ptype == PACKET_POSITION and len(body) >= 33:
             eid = struct.unpack_from('<i', body, 0)[0]
             if not eid:
