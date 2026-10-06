@@ -70,6 +70,8 @@ PACKET_VISION = 0x2c         # MinimapVisionEvent：可见性 + 自舰位置
 DIFF_WINDOW = 0.5            # 速度差分窗口（秒）—— 必须长窗口，见 coord_scale.py
 MIN_MOVE = 2.0               # 窗口内最小位移（米），低于视为静止
 DEFAULT_SHELL = 900.0        # 缺省弹速 m/s（实测范围 550~1050）
+# 可见性判定窗口：最近这么多秒内仍有 0x0a 更新即视为可见
+VISIBLE_WINDOW = 2.0
 # 散布半径模型（WoWS 经验值，随距离增长）：sigma = a + b * dist_km
 SPREAD_A, SPREAD_B = 6.0, 22.0
 
@@ -239,14 +241,14 @@ class LiveAim:
         而真值是 +1）。自舰必然出现在 MinimapVisionEvent 里（它也需要被
         报告可见性），所以用"哪个偏移能让 me_id 命中 vis"来定，可靠得多。
         """
-        if self._vis_off is not None:
+        if self._vis_off is not None and self._pos_off is not None:
             return
+        if self._vis_off is None:
+            self._vis_off = 0
+        # ★ 自舰偏移不再靠 0x2c 推断：0x2c 的位域列表顺序尚未破解
+        #   （包里是合并后的紧凑位域，arg0=友方 / arg1=敌方两批），
+        #   拿不到"哪个下标是我"。这里保留字段只为兼容，不再参与判定。
         self._vis_off = 0
-        if self.me_id is not None and self.vis_last:
-            for off in range(-4, 5):
-                if (self.me_id + off) in self.vis_last:
-                    self._vis_off = off
-                    break
         # Position 的偏移同理：先用自舰（若有），否则退回统计
         self._pos_off = None
         if self.me_id is not None and self.me_id in self.pos:
@@ -313,21 +315,22 @@ class LiveAim:
         ★ 也不可靠 build_links：AI 实体只有 entityId、**没有 avatarId**
         （实测 AI 的 avatarId=0），所以 by_avatar 里不含 AI。
 
-        可靠做法：同时具备「有 Position 轨迹」且「有 MinimapVision 记录」的
-        非我方实体 = 敌方舰船。vision 记录同时过滤掉了鱼雷/飞机/水雷等
-        非舰船实体（它们不会出现在可见性列表里）。
+        ★ **可见性直接由 0x0a 判定，不再依赖 0x2c**（实测有效）：
+        服务端只同步"客户端能看到"的实体位置，敌方不可见（进烟/出视野）时
+        就不再发 0x0a。证据：某局局末 426.8s，但多个敌舰的 Position 末次
+        停在 343.7s / 329.1s / 396.2s —— 正是它们"看不见了"的时刻。
+        所以「最近若干秒仍有 0x0a 更新」= 当前可见。
+        这比 0x2c 更简单，也绕开了 0x2c 那层尚未破解的顺序映射。
         """
+        self.infer_offsets()      # ★ 必须先推断偏移，否则我方会被误列为敌方
         known = {e for e, (_, rel) in self.ident.items() if rel in (0, 1)}
-        vis_ids = set(self.vis_last) | set(self.vis_by_vehicle)
         out = []
         for eid in self.pos:
             vid = eid - (self._pos_off or 0)
             if vid in known or eid in known:
                 continue
-            # 必须有可见性记录才认定为舰船
-            if any(self.vid_of(x) == vid for x in vis_ids):
-                if vid not in out:
-                    out.append(vid)
+            if vid not in out:
+                out.append(vid)
         return out
 
     # ---------------------------------------------------------- 解算
@@ -356,51 +359,27 @@ class LiveAim:
                 b, mv)
 
     def me_state(self, t):
-        """自舰位置与航向。
+        """自舰位置 —— **目前拿不到，这是实时预瞄唯一的硬缺口**。
 
-        ★ 自舰位置的**唯一来源**是 MinimapVisionEvent(0x2c) 且 entity_id ==
-        header.vehicles 里 relation==0 的那条 —— 回放里没有自舰的 Position 流
-        （客户端本地知道自己的位置，不需要网络同步）。
-        航向用自舰自身相邻两次 0x2c 位置差分求得，不依赖任何角度基准。
+        为什么拿不到：
+          · 回放里**没有自舰的 Position 流**（客户端本地知道自己的位置，
+            不需要网络同步），所以 0x0a 里没有我。
+          · 自舰坐标只出现在 MinimapVision(0x2c) 里，但那个包给的是
+            "按顺序的紧凑位域列表"（arg0=友方、arg1=敌方两批合并），
+            **不带 vehicleID**，所以无法确定"哪个下标是我"。
+            成熟库能解出来是因为它在更上层把 args 解成了带 vehicleID 的
+            dict 列表（events/stream.py 的 _minimap_vision_info），
+            那一层依赖完整的 gamedata schema 实时解码，我这边还没接上。
+
+        与其返回一个假的 (0,0) 让距离全错，不如明确返回 None ——
+        这样 UI 会显示"等待自舰坐标"，而不是给出一堆看似精确实则错误的数字。
         """
-        self.infer_offsets()
-        cand = {e: v for e, v in self.vis_last.items()
-                if self.vid_of(e) == self.me_id}
-        if not cand:
-            cand = {e: v for e, v in self.vis_by_vehicle.items()
-                    if self.vid_of(e) == self.me_id}
-        if not cand:
-            return None
-        if not cand:
-            return None
-        rec = max(cand.values(), key=lambda r: r[0])
-        pt, x, z = rec
-        p = (to_meters(x), to_meters(z))
-        # 历史序列：只在样本间隔合理时追加
-        if not self.my_hist or pt - self.my_hist[-1][0] > 0.2:
-            self.my_hist.append((pt, x, z))
-            if len(self.my_hist) > 40:
-                self.my_hist.pop(0)
-        hdg, spd = None, 0.0
-        if len(self.my_hist) >= 2:
-            # 找 0.5 秒前的那一点做长窗口差分（短窗口会算出假速度）
-            j = len(self.my_hist) - 1
-            while j > 0 and pt - self.my_hist[j - 1][0] <= 0.5:
-                j -= 1
-            a = self.my_hist[j]
-            dt = a[0] - self.my_hist[0][0]
-            mv = math.hypot(a[1] - self.my_hist[0][1], a[2] - self.my_hist[0][2])
-            if dt > 0.15 and mv > 0.5:
-                hdg = bearing_deg((to_meters(self.my_hist[0][1]),
-                                   to_meters(self.my_hist[0][2])),
-                                  (to_meters(a[1]), to_meters(a[2])))
-                spd = mv / dt * 1.94384
-        return {'pos': p, 't': pt, 'heading': hdg, 'speed_kn': round(spd, 1)}
+        return None
 
     def solve(self, shell_speed=DEFAULT_SHELL):
         t = self.clock
         me = self.me_state(t)
-        if not me:
+        if not me or not me.get('pos'):
             return None
         my = me['pos']
         out = []
@@ -431,8 +410,9 @@ class LiveAim:
             brg_aim = bearing_deg(my, aim)
             out.append({
                 'eid': eid, 'name': nm, 'relation': rel,
-                'visible': any(self.vid_of(x) == eid
-                               for x in (set(self.vis_last) | set(self.vis_by_vehicle))),
+                # 可见 = 最近 2 秒仍有 0x0a 更新（见 enemy_ids 的实测依据）
+                'visible': (at[0] is not None
+                            and (t - at[0]) <= VISIBLE_WINDOW),
                 'pos_m': [round(tp[0]), round(tp[1])],
                 'dist': round(dist),
                 'speed_kn': round(spd * 1.94384, 1),
