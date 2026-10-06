@@ -75,6 +75,15 @@ public sealed class GameFileMonitor
             result.MapName = json["mapDisplayName"]?.ToString() ?? "";
             result.PlayersPerTeam = json["playersPerTeam"]?.GetValue<int>() ?? 0;
 
+            // 以前被忽略、但对 AI 判断很有价值的字段
+            result.MapId = json["mapId"]?.GetValue<int>() ?? 0;
+            result.Duration = json["duration"]?.GetValue<int>() ?? 0;
+            result.GameMode = json["gameMode"]?.GetValue<int>() ?? 0;
+            result.GameType = json["gameType"]?.ToString() ?? "";
+            result.EventType = json["eventType"]?.ToString() ?? "";
+            result.ClientVersion = json["clientVersionFromExe"]?.ToString() ?? "";
+            result.Weather = FlattenWeather(json["weatherParams"]);
+
             var vehicles = json["vehicles"] as JsonArray;
             if (vehicles == null) return result;
 
@@ -125,6 +134,66 @@ public sealed class GameFileMonitor
             result.Error = ex.Message;
         }
         return result;
+    }
+
+    /// <summary>
+    /// 把 weatherParams（形如 {"0":["PCOW003_Cloudy"],"1":["PCOW005_Evening"]}）
+    /// 压成一段人/AI 都能读的中文。天气直接影响视野与隐蔽，是判断"会不会被点亮"的关键。
+    /// 未知代号保留原名，避免误译。
+    /// </summary>
+    private static string FlattenWeather(System.Text.Json.Nodes.JsonNode? node)
+    {
+        if (node == null) return "";
+        try
+        {
+            var parts = new System.Collections.Generic.List<string>();
+            System.Action<System.Text.Json.Nodes.JsonNode?> take = null!;
+            take = n =>
+            {
+                if (n == null) return;
+                if (n is System.Text.Json.Nodes.JsonArray arr)
+                {
+                    foreach (var e in arr) take(e);
+                    return;
+                }
+                if (n is System.Text.Json.Nodes.JsonObject obj)
+                {
+                    foreach (var kv in obj) take(kv.Value);
+                    return;
+                }
+                var s2 = n.ToString();
+                if (!string.IsNullOrWhiteSpace(s2)) parts.Add(s2);
+            };
+            take(node);
+
+            var zhs = new System.Collections.Generic.List<string>();
+            foreach (var s in parts)
+            {
+                // 形如 PCOW003_Cloudy —— 取下划线后的语义部分
+                var key = s.Contains('_') ? s.Substring(s.LastIndexOf('_') + 1) : s;
+                var zh = key switch
+                {
+                    "Clear" => "晴朗",
+                    "Cloudy" => "多云",
+                    "Overcast" => "阴天",
+                    "Rain" => "雨",
+                    "Storm" => "暴风雨",
+                    "Fog" => "雾",
+                    "Snow" => "雪",
+                    "Dawn" => "黎明",
+                    "Day" => "白天",
+                    "Evening" => "黄昏",
+                    "Night" => "夜晚",
+                    _ => key,
+                };
+                if (!zhs.Contains(zh)) zhs.Add(zh);
+            }
+            return zhs.Count > 0 ? string.Join("、", zhs) : "";
+        }
+        catch
+        {
+            return node.ToJsonString();
+        }
     }
 
     /// <summary>读取 tempArenaInfo.json，自动处理纯 JSON 和二进制包装两种格式。</summary>
@@ -225,7 +294,61 @@ public sealed class BattleDetectionResult
     /// <summary>每队人数（行动模式常为 7）。</summary>
     public int PlayersPerTeam { get; set; }
 
+    // ------------------------------------------------------------
+    // 以下字段 tempArenaInfo.json 里一直都有，但以前从没读进来。
+    // 它们都是给 AI 的高质量上下文：以前 AI 只能靠小地图截图去"猜"地图和天气。
+    // ------------------------------------------------------------
+
+    /// <summary>地图内部 id（如 10）。</summary>
+    public int MapId { get; set; }
+
+    /// <summary>对局总时长（秒，常见 1200）。有了它 AI 才知道"还剩多久"。</summary>
+    public int Duration { get; set; }
+
+    /// <summary>游戏模式号（如 7）。</summary>
+    public int GameMode { get; set; }
+
+    /// <summary>游戏类型字符串（如 EventBattle）。</summary>
+    public string GameType { get; set; } = "";
+
+    /// <summary>事件代号（如 PCVE027），某些运营活动的标识。</summary>
+    public string EventType { get; set; } = "";
+
+    /// <summary>
+    /// 天气参数（weatherParams，形如 {"0":["PCOW003_Cloudy"],...}）。
+    /// 天气直接影响视野与隐蔽 —— 对 AI 判断"能不能被点亮"很关键。
+    /// </summary>
+    public string Weather { get; set; } = "";
+
+    /// <summary>
+    /// 客户端版本（如 "15,8,1,13243917"）。可用来校验 mod 与当前客户端是否匹配，
+    /// 也能在 mod 失效时给出明确提示，而不是默默没数据。
+    /// </summary>
+    public string ClientVersion { get; set; } = "";
+
     public List<DetectedPlayer> Players { get; set; } = new();
+
+    /// <summary>把上面这些元数据整理成一段可以直接喂给 AI 的文本。</summary>
+    public string BuildContextText()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("【对局基本信息（tempArenaInfo.json，权威值）】");
+        sb.AppendLine($"模式：{BattleType}{(string.IsNullOrEmpty(GameType) ? "" : " / " + GameType)}" +
+                      $"{(GameMode > 0 ? "（gameMode=" + GameMode + "）" : "")}");
+        if (!string.IsNullOrEmpty(MapName))
+            sb.AppendLine($"地图：{MapName}{(MapId > 0 ? "（mapId=" + MapId + "）" : "")}");
+        if (!string.IsNullOrEmpty(Weather))
+            sb.AppendLine($"天气：{Weather}");
+        if (Duration > 0)
+            sb.AppendLine($"本局时长上限：{Duration} 秒（{Duration / 60} 分 {Duration % 60} 秒）");
+        if (PlayersPerTeam > 0)
+            sb.AppendLine($"每队人数：{PlayersPerTeam}");
+        if (!string.IsNullOrEmpty(EventType))
+            sb.AppendLine($"事件代号：{EventType}");
+        if (!string.IsNullOrEmpty(ClientVersion))
+            sb.AppendLine($"客户端版本：{ClientVersion}");
+        return sb.ToString().TrimEnd();
+    }
 }
 
 /// <summary>tempArenaInfo.json 中解析出的单个玩家。</summary>

@@ -32,6 +32,11 @@ public partial class MainWindow : Window
     private readonly ShipDatabase _database = new();
     private readonly GameFileMonitor _fileMonitor = new();
     private ModDataMonitor? _modDataMonitor;
+    /// <summary>
+    /// 实时回放流监视器。读游戏正在录制的 temp.wowsreplay，拿到所有舰船的精确坐标。
+    /// 这是目前信息量最大的一条通路：不依赖 mod，也不受游戏版本更新影响。
+    /// </summary>
+    private readonly LiveReplayMonitor _liveReplay = new();
     private VoiceController? _voiceController;
     private DispatcherTimer? _pollingTimer;
     private CancellationTokenSource? _cts;
@@ -183,6 +188,38 @@ public partial class MainWindow : Window
         {
             SpawnDbUpdater.Update(_settings.GamePath, _settings.PythonPath);
         });
+
+        // 实时回放流解析：读游戏正在录制的 temp.wowsreplay，拿到所有舰船的精确坐标。
+        // 这是 AI 能拿到的最完整战场态势，且不依赖 mod（mod 每次游戏更新都要重装）。
+        if (!string.IsNullOrWhiteSpace(_settings.GamePath))
+        {
+            var replays = Path.Combine(_settings.GamePath!, "replays");
+            if (Directory.Exists(replays))
+            {
+                if (_liveReplay.Start(_settings.PythonPath, replays))
+                    AppLog.Info("实时回放监视：已启动 " + replays);
+                else
+                    AppLog.Warn("实时回放监视未启动：" + _liveReplay.LastStatus);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 组装发给 AI 的实时战况文本 = 模组数据 + 回放流精确坐标。
+    /// 回放流那条是信息量最大的：所有舰船的实时坐标与航向，而 ModsAPI 运行时拿不到坐标。
+    /// </summary>
+    private string BuildLiveDataText()
+    {
+        var sb = new System.Text.StringBuilder();
+        var mod = _modDataMonitor?.GetLiveSummary();
+        if (!string.IsNullOrWhiteSpace(mod)) sb.Append(mod);
+        var live = _liveReplay.BuildBattleText();
+        if (!string.IsNullOrWhiteSpace(live))
+        {
+            if (sb.Length > 0) sb.AppendLine().AppendLine();
+            sb.Append(live);
+        }
+        return sb.ToString();
     }
 
     // ===== 模式切换 =====
@@ -660,6 +697,7 @@ public partial class MainWindow : Window
     {
         try { _cts?.Cancel(); } catch { }
         _pollingTimer?.Stop();
+        _liveReplay.Dispose();   // 停掉后台回放解析进程，不留孤儿进程
         _voiceController?.Dispose();
         _powerOverlay?.Close();
         _powerOverlay = null;
@@ -936,8 +974,8 @@ public partial class MainWindow : Window
                 Conversation = _conversation,
                 // 如果有新的小地图截图，附带之
                 ImageBase64 = _latestMinimapBase64 ?? "",
-                // 追问时也带上最新的模组实时数据，AI 可基于最新战况回答
-                LiveBattleDataText = _modDataMonitor?.GetLiveSummary() ?? "",
+                // 追问时也带上最新的实时数据（模组 + 回放流坐标），AI 可基于最新战况回答
+                LiveBattleDataText = BuildLiveDataText(),
                 OnStreamChunk = chunk => Dispatcher.BeginInvoke(() =>
                 {
                     // 追加到结果区末尾
@@ -1563,7 +1601,7 @@ public partial class MainWindow : Window
                 AllShips = string.Join("、", allNames),
                 KnowledgeBaseText = kbText,
                 PlayerThreatText = playerThreatText,
-                LiveBattleDataText = _modDataMonitor?.GetLiveSummary() ?? "",
+                LiveBattleDataText = BuildLiveDataText(),
                 SystemPrompt = _settings.SystemPrompt,
                 LineupFromAutoDetect = _lineupFromAutoDetect,
                 BattleMode = _currentBattleMode,
