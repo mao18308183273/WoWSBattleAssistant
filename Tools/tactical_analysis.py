@@ -51,12 +51,14 @@ except Exception:
     pass
 
 GAMEDATA = os.path.join(HERE, '_gamedata', 'data', 'scripts_entity', 'entity_defs')
+
+# ★ 坐标单位不是米：1 单位 = 8.15 米（见 coord_scale.py 的标定过程）
+from coord_scale import K_METERS, to_meters
 STATS_DIR = os.path.join(HERE, '..', 'stats')
 THREAT_PATH = os.path.join(STATS_DIR, 'threat_map.json')
 
-GRID = 250.0
-# 判定"擦边命中"的阈值：散布半径 + 一点余量（米）
-NEAR_MISS_PAD = 60.0
+GRID = 250.0 * 8.15          # ★ 网格边长也要换算：坐标单位 → 米
+NEAR_MISS_PAD = 60.0 * 8.15  # ★ 判定阈值同理
 
 
 def _cell(x, z):
@@ -242,7 +244,7 @@ def analyse(path):
         # 敌方航向优先用 vision（heading 已标定为罗盘方位），退化用 Position 的 yaw
         vh = pos_at(vision_by_id.get(a), e.timestamp, max_lag=15.0)
         ap_hdg = vh[3] if vh else None
-        d = math.hypot(ap[1] - mp[1], ap[2] - mp[2])
+        d = to_meters(math.hypot(ap[1] - mp[1], ap[2] - mp[2]))   # ★ 转米
         incoming.append({
             't': round(e.timestamp, 1),
             'from': info[a]['name'],
@@ -250,9 +252,9 @@ def analyse(path):
             'relation': info[a]['relation'],
             'dmg': round(e.damage, 0),
             'dist': round(d, 1),
-            'myPos': (round(mp[1], 1), round(mp[2], 1)),
+            'myPos': (to_meters(mp[1]), to_meters(mp[2])),
             'myHeading': round(math.degrees(mp[3]) % 360, 1),
-            'theirPos': (round(ap[1], 1), round(ap[2], 1)),
+            'theirPos': (to_meters(ap[1]), to_meters(ap[2])),
             'theirHeading': (round(math.degrees(ap_hdg) % 360, 1)
                              if ap_hdg is not None else None),
             'bearing': round(math.degrees(math.atan2(ap[1] - mp[1], ap[2] - mp[2])) % 360, 1),
@@ -346,7 +348,8 @@ def analyse(path):
 def to_text(res, limit_threats=25):
     L = []
     L.append('【战术情报（真实弹道反推，坐标精确到 0.1 米，非推测）】')
-    L.append('地图：%s　时长：%.0f 秒' % (res['map'], res['duration']))
+    L.append('地图：%s　时长：%.0f 秒　（距离已换算为米，1 单位 = %.1f 米）'
+             % (res['map'], res['duration'], K_METERS))
 
     # 火力覆盖：权威口径 = 实际打我的人
     inc = res.get('incoming') or []

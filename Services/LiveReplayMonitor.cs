@@ -23,6 +23,14 @@ namespace WoWSBattleAssistant.Services;
 /// </summary>
 public sealed class LiveReplayMonitor : IDisposable
 {
+    /// <summary>
+    /// ★ 回放坐标单位 → 米的换算系数（1 坐标单位 = 8.15 米）。
+    /// 标定过程见 Tools/coord_scale.py：利用 PositionEvent.speed（单位 km/h）
+    /// 与坐标差分交叉验证，并用"舰船速度上限""地图尺寸"两个独立物理量复核。
+    /// 这个系数错了会让所有距离和飞行时间差近一倍。
+    /// </summary>
+    public const double K_METERS = 8.15;
+
     /// <summary>快照 JSON 的落地位置（放在程序目录下，避免权限问题）。</summary>
     public string SnapshotPath { get; }
 
@@ -177,7 +185,7 @@ public sealed class LiveReplayMonitor : IDisposable
 
         // 以自己为原点给方位，AI 更好用
         var me = s.Ships.FirstOrDefault(x => x.Relation == 0);
-        double ox = me?.X ?? 0, oz = me?.Z ?? 0;
+        double ox = me?.X ?? 0, oz = me?.Z ?? 0;   // 原始坐标单位，比较时保持同单位即可
 
         var allies = s.Ships.Where(x => x.Relation is 0 or 1).ToList();
         var foes = s.Ships.Where(x => x.Relation == 2).ToList();
@@ -209,7 +217,8 @@ public sealed class LiveReplayMonitor : IDisposable
         var sb = new StringBuilder();
         sb.Append(isAlly ? (s.Relation == 0 ? "自己" : "队友") : "敌舰");
         if (!string.IsNullOrEmpty(s.Name)) sb.Append(' ').Append(s.Name);
-        sb.Append($"　坐标({s.X:0}, {s.Z:0})");
+        // 坐标与距离都换算成米，避免把"坐标单位"当成米给出误导性的结论
+        sb.Append($"　坐标({s.X * K_METERS:0}, {s.Z * K_METERS:0}) 米");
 
         // 航向：yaw 是弧度，转成角度。0 度对应方向随版本可能有偏移，故标注为参考值。
         if (Math.Abs(s.Yaw) > 0.0001)
@@ -223,6 +232,8 @@ public sealed class LiveReplayMonitor : IDisposable
 
     private static double Dist(double x, double z, double ox, double oz)
         => Math.Sqrt((x - ox) * (x - ox) + (z - oz) * (z - oz));
+
+    private const double K_Meters = K_METERS;
 
     /// <summary>中文方位（东西在前；dz 记为北）。</summary>
     private static string Direction(double dx, double dz)

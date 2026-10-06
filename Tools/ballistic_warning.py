@@ -44,6 +44,10 @@ except Exception:
     pass
 
 GAMEDATA = os.path.join(HERE, '_gamedata', 'data', 'scripts_entity', 'entity_defs')
+
+# ★ 坐标单位不是米！1 单位 = 15.90 米（7919 样本标定，见 coord_scale.py）。
+# 早期把坐标距离当米用，导致飞行时间低估 16 倍。
+from coord_scale import K_METERS, to_meters
 STATS_DIR = os.path.join(HERE, '..', 'stats')
 NEAR_PATH = os.path.join(STATS_DIR, 'aimed_at_me.json')
 
@@ -93,11 +97,14 @@ def analyse(path):
         mx = sum(s.spawn_x for s in grp) / len(grp)
         mz = sum(s.spawn_z for s in grp) / len(grp)
         # 散布半径 = 各落点到中心的平均距离（这才是"危险区半径"）
-        spread = sum(math.hypot(s.target_x - ax, s.target_z - az) for s in grp) / len(grp)
-        dist = math.hypot(ax - mx, az - mz)
+        spread = to_meters(sum(math.hypot(s.target_x - ax, s.target_z - az) for s in grp) / len(grp))  # ★ 转米
+        dist_units = math.hypot(ax - mx, az - mz)
+        dist = to_meters(dist_units)          # ★ 转米
         # 飞行时间用 hitDistance（炮弹实际飞行距离，含抛射修正）而不是
         # 炮口到瞄准点的直线距离 —— 后者会低估抛射，把 0.5 秒算成 0.3 秒。
-        hd = grp[0].hit_distance or dist
+        # hit_distance 同样是**坐标单位**，必须换算成米再除以 m/s。
+        # 漏掉这一步会让飞行时间低估 16 倍（0.34 秒 vs 实际 5.4 秒）。
+        hd = to_meters(grp[0].hit_distance or dist_units)
         flight = hd / sp
         arrive = t0 + flight
 
@@ -106,10 +113,10 @@ def analyse(path):
             continue
         # 敌方瞄准点离我多远。注意 aim 是"敌方想打的位置"，不等于落点；
         # 散布（spread）才是危险区半径。
-        d_me = math.hypot(ax - mp[1], az - mp[2])
+        d_me = to_meters(math.hypot(ax - mp[1], az - mp[2]))   # ★ 转米
         if d_me > spread + 300:           # 瞄的都不是我附近，直接排除
             continue
-        d_muzzle = math.hypot(mx - mp[1], mz - mp[2])
+        d_muzzle = to_meters(math.hypot(mx - mp[1], mz - mp[2]))   # ★ 转米
 
         # ---- 躲避判定（这里第一版逻辑是错的：把"瞄准点离我 232 米"判成
         # "能躲"。实际上瞄准点离我远 = 炮弹落在我旁边 = 本来就不需要躲。）
@@ -127,10 +134,10 @@ def analyse(path):
             'from': info.get(owner, {}).get('name', '未知'),
             'isBot': info.get(owner, {}).get('isBot'),
             'relation': info.get(owner, {}).get('relation'),
-            'muzzle': (round(mx, 1), round(mz, 1)),
-            'aim': (round(ax, 1), round(az, 1)),
-            'gunDist': round(d_muzzle, 0),
-            'hitDist': round(hd, 0),
+            'muzzle_m': (to_meters(mx), to_meters(mz)),
+            'aim_m': (to_meters(ax), to_meters(az)),
+            'gunDist': round(d_muzzle),
+            'hitDist': round(to_meters(hd)),
             'spread': round(spread, 1),
             'dToMe': round(d_me, 1),
             'inDanger': in_danger,
@@ -138,7 +145,7 @@ def analyse(path):
             'dodgeDist': round(min(flight * 15.0, 9999), 0),
             'needDist': round(need, 0),
             'shells': len(grp),
-            'myPos': (round(mp[1], 1), round(mp[2], 1)),
+            'myPos_m': (to_meters(mp[1]), to_meters(mp[2])),
             'myHeading': round(mp[3] % 360, 1),
         })
 
@@ -176,14 +183,18 @@ def to_text(res, limit=30):
     st = res['stats']
     L.append('【炮弹落点预测（服务器下发时落点即已确定，非推测）】')
     L.append('地图：%s　时长：%.0f 秒' % (res['map'], res['duration']))
+    L.append('（距离单位已换算为米：1 坐标单位 = %.1f 米）' % K_METERS)
     L.append('')
     L.append('全场敌方齐射 %d 次，落点在我附近的 %d 次 —— 其中 %d 次我处在危险区内（必须躲），'
              '但只有 %d 次来得及躲，**%d 次飞行时间太短、躲不掉**。'
              % (st['salvos'], st['aimedAtMe'], st['inDanger'], st['dodgeable'], st['noWindow']))
     if st['noWindow'] and st['noWindow'] > st['inDanger'] * 0.4:
-        L.append('⚠ 超过 4 成的炮在你身上时**没有任何躲避窗口**（飞行 <%.2f 秒）——'
+        L.append('⚠ 超过 4 成的炮在你身上时**没有躲避窗口**（飞行 <%.2f 秒）——'
                  '这个距离上只能靠烟幕、地形遮蔽、或先手开火抢先。'
                  % (st['minFlight'] + 0.2))
+    elif st['dodgeable']:
+        L.append('✓ 大部分炮有躲避窗口：平均能横移 %.0f 米，优先向烟幕/岛屿方向规避。'
+                 % (sum(t['dodgeDist'] for t in dodgeable) / max(1, len(dodgeable))))
     if st['aimedAtMe']:
         L.append('提前量：最少 %.2f 秒，最多 %.2f 秒，平均 %.2f 秒%s' % (
             st['minFlight'], st['maxFlight'], st['avgFlight'],
@@ -228,9 +239,12 @@ def main():
     ap.add_argument('--limit', type=int, default=20)
     a = ap.parse_args()
     d = os.path.join(os.environ.get('WOWS_PATH', r'J:\Games\World_of_Warships_CN360'), 'replays')
-    files = [a.replay] if a.replay else [
-        os.path.join(d, f) for f in os.listdir(d) if f.endswith('.wowsreplay')]
-    files.sort(key=os.path.getmtime, reverse=True)
+    if a.replay:
+        files = [a.replay]          # 指定文件时不做排序（原实现会在这里崩）
+    else:
+        files = [os.path.join(d, f) for f in os.listdir(d)
+                 if f.endswith('.wowsreplay') and 'temp' not in f]
+        files.sort(key=os.path.getmtime, reverse=True)
     if not os.path.isdir(GAMEDATA):
         print('[×] 缺少实体定义：%s' % GAMEDATA)
         return 2
