@@ -67,3 +67,5 @@ Tools/wows_ships_data_*.json
 # 早期自绘小地图方案的演示图（该方案已弃用，改为直接截游戏渲染的小地图）
 高清小地图_*.png
 __pycache__/
+Tools/_gamedata/
+stats/reports/

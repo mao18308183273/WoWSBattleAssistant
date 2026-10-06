@@ -1,0 +1,201 @@
+{
+ "battles": 30,
+ "wins": 0,
+ "losses": 0,
+ "draws": 0,
+ "totalDamage": 3492922.852750778,
+ "totalTaken": 1402530.329421997,
+ "totalKills": 127,
+ "totalDeaths": 34,
+ "totalShots": 18070,
+ "totalHits": 2980,
+ "totalDistance": 0.0,
+ "byShip": {
+  "3540989136": {
+   "battles": 11.0,
+   "damage": 1844646.8368110657,
+   "kills": 44.0,
+   "deaths": 16.0
+  },
+  "4284429648": {
+   "battles": 2.0,
+   "damage": 456768.57778930664,
+   "kills": 14.0,
+   "deaths": 2.0
+  },
+  "4078352176": {
+   "battles": 6.0,
+   "damage": 422369.22204589844,
+   "kills": 18.0,
+   "deaths": 6.0
+  },
+  "4180587728": {
+   "battles": 1.0,
+   "damage": 72444.30537414551,
+   "kills": 13.0,
+   "deaths": 0.0
+  },
+  "4078352368": {
+   "battles": 1.0,
+   "damage": 76979.98031616211,
+   "kills": 10.0,
+   "deaths": 0.0
+  },
+  "3543086896": {
+   "battles": 5.0,
+   "damage": 392585.5061969757,
+   "kills": 22.0,
+   "deaths": 6.0
+  },
+  "4076812272": {
+   "battles": 4.0,
+   "damage": 227128.42421722412,
+   "kills": 6.0,
+   "deaths": 4.0
+  }
+ },
+ "byMap": {
+  "spaces/35_NE_north_winter": {
+   "battles": 2,
+   "wins": 0,
+   "damage": 295221.445602417
+  },
+  "spaces/47_Sleeping_Giant": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 60636.47449493408
+  },
+  "spaces/46_Estuary": {
+   "battles": 2,
+   "wins": 0,
+   "damage": 213577.90279388428
+  },
+  "spaces/28_naval_mission": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 91303.02493286133
+  },
+  "spaces/52_Britain": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 136842.99783325195
+  },
+  "spaces/15_NE_north": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 179868.27699279785
+  },
+  "spaces/18_NE_ice_islands": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 322396.9989013672
+  },
+  "spaces/53_Shoreside": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 134371.57888793945
+  },
+  "spaces/41_Conquest": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 57606.796478271484
+  },
+  "spaces/16_OC_bees_to_honey": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 175162.87897491455
+  },
+  "spaces/s10_USS_CL": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 72444.30537414551
+  },
+  "spaces/s14_WW2_OP3": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 353382.8837547302
+  },
+  "spaces/s01_NavalBase": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 123162.57141113281
+  },
+  "spaces/13_OC_new_dawn": {
+   "battles": 2,
+   "wins": 0,
+   "damage": 129647.26608276367
+  },
+  "spaces/s09_LePVE": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 62629.185546875
+  },
+  "spaces/37_Ridge": {
+   "battles": 2,
+   "wins": 0,
+   "damage": 359923.64097595215
+  },
+  "spaces/51_Greece": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 95036.09272766113
+  },
+  "spaces/38_Canada": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 77195.2891998291
+  },
+  "spaces/17_NA_fault_line": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 127963.57524108887
+  },
+  "spaces/20_NE_two_brothers": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 34075.849212646484
+  },
+  "spaces/40_Okinawa": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 19249.700004577637
+  },
+  "spaces/50_Gold_harbor": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 45839.29975891113
+  },
+  "spaces/s13_WW2_OP2": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 99595.59752845764
+  },
+  "spaces/42_Neighbors": {
+   "battles": 1,
+   "wins": 0,
+   "damage": 99485.8371963501
+  },
+  "spaces/08_NE_passage": {
+   "battles": 2,
+   "wins": 0,
+   "damage": 126303.38284301758
+  }
+ },
+ "deathHeat": {},
+ "deathCause": {
+  ":Nakhimov:": 1,
+  ":Tirpitz:": 1,
+  ":Scheer:": 1,
+  ":Wright:": 1,
+  ":Tourville:": 1,
+  "未知": 4,
+  "IDS_OP_01_02_MOB_WARSHIP_05": 1,
+  ":Kuznetsov:": 1,
+  ":Knight:": 1,
+  ":Makarov:": 1,
+  ":Buckmaster:": 1,
+  ":Millo:": 1,
+  ":Fisher:": 1,
+  ":Beatty:": 1
+ }
+}

@@ -1,0 +1,446 @@
+{
+ "profile": {
+  "version": 1,
+  "battles": 30,
+  "deathHeat": {},
+  "deathByMap": {
+   "spaces/47_Sleeping_Giant": {
+    "n": 1,
+    "byTime": [
+     353.9
+    ]
+   },
+   "spaces/46_Estuary": {
+    "n": 1,
+    "byTime": [
+     334.0
+    ]
+   },
+   "spaces/52_Britain": {
+    "n": 1,
+    "byTime": [
+     367.7
+    ]
+   },
+   "spaces/15_NE_north": {
+    "n": 1,
+    "byTime": [
+     502.3
+    ]
+   },
+   "spaces/18_NE_ice_islands": {
+    "n": 1,
+    "byTime": [
+     529.6
+    ]
+   },
+   "spaces/s14_WW2_OP3": {
+    "n": 1,
+    "byTime": [
+     956.4
+    ]
+   },
+   "spaces/s01_NavalBase": {
+    "n": 1,
+    "byTime": [
+     536.7
+    ]
+   },
+   "spaces/37_Ridge": {
+    "n": 2,
+    "byTime": [
+     308.2,
+     520.9
+    ]
+   },
+   "spaces/51_Greece": {
+    "n": 1,
+    "byTime": [
+     341.3
+    ]
+   },
+   "spaces/38_Canada": {
+    "n": 1,
+    "byTime": [
+     270.7
+    ]
+   },
+   "spaces/35_NE_north_winter": {
+    "n": 1,
+    "byTime": [
+     354.6
+    ]
+   },
+   "spaces/20_NE_two_brothers": {
+    "n": 1,
+    "byTime": [
+     367.5
+    ]
+   },
+   "spaces/40_Okinawa": {
+    "n": 1,
+    "byTime": [
+     331.5
+    ]
+   },
+   "spaces/s13_WW2_OP2": {
+    "n": 1,
+    "byTime": [
+     593.7
+    ]
+   },
+   "spaces/08_NE_passage": {
+    "n": 2,
+    "byTime": [
+     549.2,
+     521.5
+    ]
+   }
+  },
+  "killers": {
+   ":Nakhimov:": 1,
+   ":Tirpitz:": 1,
+   ":Scheer:": 1,
+   ":Wright:": 1,
+   ":Tourville:": 1,
+   "IDS_OP_01_02_MOB_WARSHIP_05": 1,
+   ":Kuznetsov:": 1,
+   ":Knight:": 1,
+   ":Makarov:": 1,
+   ":Buckmaster:": 1,
+   ":Millo:": 1,
+   ":Fisher:": 1,
+   ":Beatty:": 1
+  },
+  "byMap": {
+   "spaces/35_NE_north_winter": {
+    "n": 2,
+    "damage": 295221.445602417,
+    "deaths": 2,
+    "kills": 10
+   },
+   "spaces/47_Sleeping_Giant": {
+    "n": 1,
+    "damage": 60636.47449493408,
+    "deaths": 2,
+    "kills": 0
+   },
+   "spaces/46_Estuary": {
+    "n": 2,
+    "damage": 213577.90279388428,
+    "deaths": 2,
+    "kills": 6
+   },
+   "spaces/52_Britain": {
+    "n": 1,
+    "damage": 136842.99783325195,
+    "deaths": 2,
+    "kills": 4
+   },
+   "spaces/28_naval_mission": {
+    "n": 1,
+    "damage": 91303.02493286133,
+    "deaths": 0,
+    "kills": 6
+   },
+   "spaces/15_NE_north": {
+    "n": 1,
+    "damage": 179868.27699279785,
+    "deaths": 2,
+    "kills": 4
+   },
+   "spaces/18_NE_ice_islands": {
+    "n": 1,
+    "damage": 322396.9989013672,
+    "deaths": 2,
+    "kills": 8
+   },
+   "spaces/53_Shoreside": {
+    "n": 1,
+    "damage": 134371.57888793945,
+    "deaths": 0,
+    "kills": 6
+   },
+   "spaces/41_Conquest": {
+    "n": 1,
+    "damage": 57606.796478271484,
+    "deaths": 0,
+    "kills": 0
+   },
+   "spaces/16_OC_bees_to_honey": {
+    "n": 1,
+    "damage": 175162.87897491455,
+    "deaths": 0,
+    "kills": 6
+   },
+   "spaces/s10_USS_CL": {
+    "n": 1,
+    "damage": 72444.30537414551,
+    "deaths": 0,
+    "kills": 13
+   },
+   "spaces/s14_WW2_OP3": {
+    "n": 1,
+    "damage": 353382.8837547302,
+    "deaths": 2,
+    "kills": 12
+   },
+   "spaces/s01_NavalBase": {
+    "n": 1,
+    "damage": 123162.57141113281,
+    "deaths": 2,
+    "kills": 2
+   },
+   "spaces/13_OC_new_dawn": {
+    "n": 2,
+    "damage": 129647.26608276367,
+    "deaths": 0,
+    "kills": 14
+   },
+   "spaces/s09_LePVE": {
+    "n": 1,
+    "damage": 62629.185546875,
+    "deaths": 0,
+    "kills": 6
+   },
+   "spaces/37_Ridge": {
+    "n": 2,
+    "damage": 359923.64097595215,
+    "deaths": 4,
+    "kills": 2
+   },
+   "spaces/51_Greece": {
+    "n": 1,
+    "damage": 95036.09272766113,
+    "deaths": 2,
+    "kills": 2
+   },
+   "spaces/38_Canada": {
+    "n": 1,
+    "damage": 77195.2891998291,
+    "deaths": 2,
+    "kills": 2
+   },
+   "spaces/17_NA_fault_line": {
+    "n": 1,
+    "damage": 127963.57524108887,
+    "deaths": 0,
+    "kills": 2
+   },
+   "spaces/20_NE_two_brothers": {
+    "n": 1,
+    "damage": 34075.849212646484,
+    "deaths": 2,
+    "kills": 2
+   },
+   "spaces/40_Okinawa": {
+    "n": 1,
+    "damage": 19249.700004577637,
+    "deaths": 2,
+    "kills": 0
+   },
+   "spaces/50_Gold_harbor": {
+    "n": 1,
+    "damage": 45839.29975891113,
+    "deaths": 0,
+    "kills": 2
+   },
+   "spaces/s13_WW2_OP2": {
+    "n": 1,
+    "damage": 99595.59752845764,
+    "deaths": 2,
+    "kills": 10
+   },
+   "spaces/42_Neighbors": {
+    "n": 1,
+    "damage": 99485.8371963501,
+    "deaths": 0,
+    "kills": 2
+   },
+   "spaces/08_NE_passage": {
+    "n": 2,
+    "damage": 126303.38284301758,
+    "deaths": 4,
+    "kills": 6
+   }
+  },
+  "byShip": {
+   "3540989136": {
+    "n": 11,
+    "damage": 1844646.8368110657,
+    "deaths": 16,
+    "kills": 44,
+    "taken": 739572.035369873,
+    "shots": 10434,
+    "hits": 0
+   },
+   "4284429648": {
+    "n": 2,
+    "damage": 456768.57778930664,
+    "deaths": 2,
+    "kills": 14,
+    "taken": 238126.78845214844,
+    "shots": 1933,
+    "hits": 0
+   },
+   "4078352176": {
+    "n": 6,
+    "damage": 422369.22204589844,
+    "deaths": 6,
+    "kills": 18,
+    "taken": 37225.12747192383,
+    "shots": 16,
+    "hits": 0
+   },
+   "4180587728": {
+    "n": 1,
+    "damage": 72444.30537414551,
+    "deaths": 0,
+    "kills": 13,
+    "taken": 433.2239990234375,
+    "shots": 692,
+    "hits": 0
+   },
+   "4078352368": {
+    "n": 1,
+    "damage": 76979.98031616211,
+    "deaths": 0,
+    "kills": 10,
+    "taken": 0.0,
+    "shots": 0,
+    "hits": 0
+   },
+   "3543086896": {
+    "n": 5,
+    "damage": 392585.5061969757,
+    "deaths": 6,
+    "kills": 22,
+    "taken": 131325.8137664795,
+    "shots": 3855,
+    "hits": 0
+   },
+   "4076812272": {
+    "n": 4,
+    "damage": 227128.42421722412,
+    "deaths": 4,
+    "kills": 6,
+    "taken": 255847.34036254883,
+    "shots": 1140,
+    "hits": 0
+   }
+  },
+  "openings": [],
+  "engagementRanges": [],
+  "visionRatio": [
+   0.11726883037354562,
+   0.0997485331098072,
+   0.09918478260869565,
+   0.11051645705111052,
+   0.11266272189349112,
+   0.11740493923951392,
+   0.10832907511497189,
+   0.11587147030185005,
+   0.08324646314221891,
+   0.12086190009794319,
+   0.11825821237585943,
+   0.12236921226698737,
+   0.11049243083347833,
+   0.1166304741223308,
+   0.10192573678050856,
+   0.112241653418124,
+   0.11578947368421053,
+   0.10803802938634399,
+   0.1234982332155477,
+   0.09907120743034056,
+   0.10797202797202797,
+   0.10238390519498415,
+   0.08098318240620957,
+   0.06702412868632708,
+   0.046994535519125684,
+   0.12281879194630872,
+   0.11352253756260434,
+   0.09968641690047862,
+   0.09210763951598339,
+   0.09495830174374525
+  ],
+  "timeline": [
+   353.9,
+   334.0,
+   367.7,
+   502.3,
+   529.6,
+   956.4,
+   536.7,
+   308.2,
+   520.9,
+   341.3,
+   270.7,
+   354.6,
+   367.5,
+   331.5,
+   593.7,
+   549.2,
+   521.5
+  ],
+  "totals": {
+   "damage": 3492922.852750778,
+   "taken": 1402530.329421997,
+   "kills": 127.0,
+   "deaths": 34.0,
+   "shots": 18070.0,
+   "hits": 0.0
+  }
+ },
+ "conclusions": [
+  {
+   "level": "info",
+   "n": 17,
+   "text": "阵亡时段分布：开局 0 次 / 中期 9 次 / 后期 8 次。你最常在中期 2-7 分钟阵亡（9/17）。"
+  },
+  {
+   "level": "weak",
+   "n": 13,
+   "text": "阵亡 13 次但凶手分散（最多只被同一人击沉 1 次），说明死亡原因较分散，暂无明确\"被谁克\"的结论。"
+  },
+  {
+   "level": "info",
+   "n": 2,
+   "text": "场均输出最高的地图：37_Ridge（179962/局，2 局）。最差：08_NE_passage（63152/局，2 局）。"
+  },
+  {
+   "level": "weak",
+   "n": 2,
+   "text": "地图 37_Ridge 只有 2 局样本，结论仅供参考。"
+  },
+  {
+   "level": "weak",
+   "n": 2,
+   "text": "地图 35_NE_north_winter 只有 2 局样本，结论仅供参考。"
+  },
+  {
+   "level": "weak",
+   "n": 2,
+   "text": "地图 46_Estuary 只有 2 局样本，结论仅供参考。"
+  },
+  {
+   "level": "weak",
+   "n": 2,
+   "text": "地图 13_OC_new_dawn 只有 2 局样本，结论仅供参考。"
+  },
+  {
+   "level": "weak",
+   "n": 2,
+   "text": "地图 08_NE_passage 只有 2 局样本，结论仅供参考。"
+  },
+  {
+   "level": "info",
+   "n": 5,
+   "text": "分舰表现 —— 船id4284429648：场均输出 228384，场均阵亡 1.0，命中率 0%；船id3540989136：场均输出 167695，场均阵亡 1.5，命中率 0%；船id3543086896：场均输出 78517，场均阵亡 1.2，命中率 0%；船id4078352176：场均输出 70395，场均阵亡 1.0，命中率 0%；船id4076812272：场均输出 56782，场均阵亡 1.0，命中率 0%"
+  },
+  {
+   "level": "info",
+   "n": 18070,
+   "text": "累计开火 18070 发、命中 0 发，总命中率 0.0%。命中率偏低，优先拉开距离再开火"
+  }
+ ]
+}
