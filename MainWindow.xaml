@@ -374,8 +374,69 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- ============ 预瞄目标（右键锁定） ============ -->
+                    <Border x:Name="AimCard" Grid.Row="3" Style="{StaticResource StepCard}" Margin="0,0,0,8">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="3. 预瞄目标（右键锁定）" Foreground="{StaticResource TextPrimary}"
+                                           FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <TextBlock x:Name="TxtAimStatus" Text="等待对局" Foreground="#FF9BA4B8"
+                                               FontSize="10.5" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox x:Name="CmbShellType" Width="92" Height="24" FontSize="10.5"
+                                              SelectionChanged="CmbShellType_SelectionChanged" ToolTip="弹种不同弹速不同，切换后重新解算提前量">
+                                        <ComboBoxItem Content="AP 穿甲" Tag="900"/>
+                                        <ComboBoxItem Content="HE 高爆" Tag="820"/>
+                                        <ComboBoxItem Content="手动" Tag="0"/>
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Text="在列表里右键点击目标即可锁定，锁定项会置顶并高亮。数据来自游戏回放流里的真实坐标与真实弹速，不是屏幕估算。"
+                                       Foreground="#FF5D6575" FontSize="10" Margin="0,0,0,6" TextWrapping="Wrap"/>
+
+                            <!-- 锁定目标详情 -->
+                            <Border x:Name="AimLockPanel" Background="#FF12161F" BorderBrush="#FF2B3247"
+                                    BorderThickness="1" CornerRadius="6" Padding="9,7" Margin="0,0,0,7"
+                                    Visibility="Collapsed">
+                                <StackPanel x:Name="AimLockInfo"/>
+                            </Border>
+
+                            <!-- 目标列表 -->
+                            <Border Background="#FF12161F" BorderBrush="#FF2B3247" BorderThickness="1"
+                                    CornerRadius="6" MinHeight="70" MaxHeight="230">
+                                <Grid>
+                                    <ListView x:Name="LsvAimTargets" Background="Transparent" BorderThickness="0"
+                                              Foreground="#FFE8ECF4" FontSize="11"
+                                              ContextMenuOpening="LsvAimTargets_ContextMenuOpening"
+                                              MouseRightButtonUp="LsvAimTargets_MouseRightButtonUp"
+                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                        <ListView.View>
+                                            <GridView>
+                                                <GridViewColumn Header="目标" Width="150" DisplayMemberBinding="{Binding Name}"/>
+                                                <GridViewColumn Header="距离" Width="66" DisplayMemberBinding="{Binding DistText}"/>
+                                                <GridViewColumn Header="速度" Width="62" DisplayMemberBinding="{Binding SpeedText}"/>
+                                                <GridViewColumn Header="飞行" Width="58" DisplayMemberBinding="{Binding FlightText}"/>
+                                                <GridViewColumn Header="提前量" Width="66" DisplayMemberBinding="{Binding LeadText}"/>
+                                                <GridViewColumn Header="应瞄方位" Width="118" DisplayMemberBinding="{Binding BrgText}"/>
+                                                <GridViewColumn Header="命中" Width="52" DisplayMemberBinding="{Binding HitText}"/>
+                                            </GridView>
+                                        </ListView.View>
+                                    </ListView>
+                                    <TextBlock x:Name="TxtAimPlaceholder" Text="暂无已点亮的敌方目标"
+                                               Foreground="#FF5D6575" FontSize="11"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
                     <!-- ============ 步骤③ 分析 ============ -->
-                    <Grid Grid.Row="3" Margin="0,2,0,6">
+                    <Grid Grid.Row="4" Margin="0,2,0,6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -388,7 +449,7 @@
                     </Grid>
 
                     <!-- 结果区标题 -->
-                    <Grid Grid.Row="4">
+                    <Grid Grid.Row="5">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
@@ -413,7 +474,7 @@
                     </Grid>
 
                     <!-- 追问输入区域 -->
-                    <Border x:Name="FollowUpPanel" Grid.Row="5" Background="#FF1B202E" CornerRadius="6"
+                    <Border x:Name="FollowUpPanel" Grid.Row="6" Background="#FF1B202E" CornerRadius="6"
                             Padding="4" Margin="0,6,0,0" Visibility="Collapsed">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -430,7 +491,7 @@
                         </Grid>
                     </Border>
 
-                    <TextBlock x:Name="TxtFooter" Grid.Row="6" Text="" Foreground="#FF5D6575" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="TxtFooter" Grid.Row="7" Text="" Foreground="#FF5D6575" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
                 </Grid>
             </Grid>
         </Border>

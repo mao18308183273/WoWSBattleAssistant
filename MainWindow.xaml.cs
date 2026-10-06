@@ -37,6 +37,11 @@ public partial class MainWindow : Window
     /// 这是目前信息量最大的一条通路：不依赖 mod，也不受游戏版本更新影响。
     /// </summary>
     private readonly LiveReplayMonitor _liveReplay = new();
+    /// <summary>
+    /// 实时预瞄（炮击提前量）监视器。读 temp.wowsreplay 解算"打移动目标该往哪瞄"，
+    /// 数据来自回放里的真实坐标与真实弹速，不是屏幕估算。
+    /// </summary>
+    private readonly LiveAimMonitor _liveAim = new();
     private VoiceController? _voiceController;
     private DispatcherTimer? _pollingTimer;
     private CancellationTokenSource? _cts;
@@ -191,6 +196,10 @@ public partial class MainWindow : Window
 
         // 实时回放流解析：读游戏正在录制的 temp.wowsreplay，拿到所有舰船的精确坐标。
         // 这是 AI 能拿到的最完整战场态势，且不依赖 mod（mod 每次游戏更新都要重装）。
+        // 预瞄面板（目标列表 + 右键锁定）
+        try { InitAimUi(); }
+        catch (Exception ex) { AppLog.Warn("预瞄面板初始化失败：" + ex.Message); }
+
         if (!string.IsNullOrWhiteSpace(_settings.GamePath))
         {
             var replays = Path.Combine(_settings.GamePath!, "replays");
@@ -200,6 +209,11 @@ public partial class MainWindow : Window
                     AppLog.Info("实时回放监视：已启动 " + replays);
                 else
                     AppLog.Warn("实时回放监视未启动：" + _liveReplay.LastStatus);
+
+                if (_liveAim.Start(_settings.PythonPath, replays))
+                    AppLog.Info("实时预瞄：已启动");
+                else
+                    AppLog.Warn("实时预瞄未启动：" + _liveAim.LastStatus);
             }
         }
     }
@@ -219,6 +233,8 @@ public partial class MainWindow : Window
             if (sb.Length > 0) sb.AppendLine().AppendLine();
             sb.Append(live);
         }
+        // ★ 预瞄数据**刻意不注入 AI**：它是给人看的操作提示
+        //   （右键锁定 → 照着提前量打），发不给模型。改由 AimPanel 呈现。
         return sb.ToString();
     }
 
@@ -698,6 +714,8 @@ public partial class MainWindow : Window
         try { _cts?.Cancel(); } catch { }
         _pollingTimer?.Stop();
         _liveReplay.Dispose();   // 停掉后台回放解析进程，不留孤儿进程
+        _liveAim.Dispose();
+        _aimUiTimer?.Stop();
         _voiceController?.Dispose();
         _powerOverlay?.Close();
         _powerOverlay = null;
